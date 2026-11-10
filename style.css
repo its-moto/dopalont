@@ -30,7 +30,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
   display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
 .panel.wide { width: min(860px, 100%); }
 h1 { margin: 0; display: flex; align-items: baseline; gap: 12px; line-height: 1; }
-.logo { font-family: var(--font-logo); font-size: 60px; font-style: italic; letter-spacing: 0.01em;
+.logo { font-family: var(--font-logo); font-size: 54px; font-style: italic; letter-spacing: 0.01em;
   background: linear-gradient(180deg, #fff36b 0%, #ffb02e 45%, #ff3d7f 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 3px 0 #7a0f3a) drop-shadow(0 0 18px rgba(255, 61, 127, 0.55)); padding-right: 6px; }
 .logo-jp { font-family: var(--font-pop); font-size: 30px; color: #fff; background: var(--accent); border-radius: 6px; padding: 4px 10px;
@@ -109,6 +109,7 @@ button.join { font-size: 13px; padding: 7px; }
 
 #topleft { position: absolute; left: 16px; top: 16px; display: flex; flex-direction: column; gap: 8px; }
 #minimap { width: 200px; height: 200px; border-radius: 10px; background: rgba(8, 10, 14, 0.38); border: 1px solid rgba(255, 255, 255, 0.14); }
+#area { font-size: 13px; color: #fff; text-shadow: 0 1px 3px #000; letter-spacing: 0.06em; min-height: 18px; margin-top: -4px; }
 #hints { font-size: 11px; color: #c5cbd8; line-height: 1.8; text-shadow: 0 1px 3px #000; opacity: 0.85; }
 #hints b { color: #fff; background: rgba(0, 0, 0, 0.45); border-radius: 3px; padding: 1px 5px; }
 

@@ -65,7 +65,7 @@ assert.ok(Math.hypot(me.pos.x - hp.pos.x, me.pos.z - hp.pos.z) < 0.01, '出現�
 
 // 予測: 走っている間、参加側の位置はホストより少し先行し、止まれば一致する
 ci.state.mz = 1;
-run(0.5); // スポーンから壁までは 4m 以上あるので、0.5 秒なら必ず走り続けている
+run(0.5); // スポーンの先は防衛通路なので、0.5 秒なら必ず走り続けている
 const lead = Math.hypot(me.pos.x - hp.pos.x, me.pos.z - hp.pos.z);
 assert.ok(lead > 0.1 && lead < 1.2, `入力が届くまでのぶん先行する (${lead.toFixed(2)}m)`);
 assert.ok(Math.hypot(client.viewOffset.x, client.viewOffset.z) < 0.02, '予測がホストの結果と一致し、補正がほぼ 0');

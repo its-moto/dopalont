@@ -1,59 +1,90 @@
 import { hash2 } from '../core/math.js';
 
 const BUILDING_MATS = ['concrete', 'sandstone', 'painted', 'concrete', 'sandstone', 'metal'];
-const MAX_CELLS = 5; // 建物 1 棟の最大マス数。細かく分けると高さと素材に変化が出る
+const MAX_WALL = 12;     // 建物 1 棟の最大サイズ (m)。細かく分けると高さと素材に変化が出る
+const ROOF_CLEAR = 3.4;  // 屋根つきエリアの天井の高さ (床から)
+const SOLID = -1;
 
-/**
- * マップ定義 (文字グリッド + 遮蔽物) から、衝突と描画の両方で使う箱のリストを作る
- * 箱: { min:[x,y,z], max:[x,y,z], mat, kind:'floor'|'wall'|'prop', uv:'world'|'fit' }
- */
-export function buildMap(def) {
-  const { grid, cell } = def;
-  const rows = grid.length, cols = grid[0].length;
-  const ox = (-cols * cell) / 2, oz = (-rows * cell) / 2;
-  const boxes = [];
-
-  boxes.push({
-    min: [ox - 4, -2, oz - 4], max: [ox + cols * cell + 4, 0, oz + rows * cell + 4],
-    mat: 'sand', kind: 'floor', uv: 'world',
-  });
-
-  // 隣り合う '#' をまとめて箱の数を減らす
-  const used = grid.map((row) => new Uint8Array(row.length));
-  const solid = (r, c) => grid[r][c] === '#' && !used[r][c];
+/** 同じ値が並ぶマスをまとめて、箱の数を減らす */
+function merge(grid, cols, rows, keyOf, max, emit) {
+  const used = new Uint8Array(cols * rows);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (!solid(r, c)) continue;
+      const i = r * cols + c;
+      if (used[i]) continue;
+      const key = keyOf(grid[i]);
+      if (key === null) continue;
+      const same = (rr, cc) => !used[rr * cols + cc] && keyOf(grid[rr * cols + cc]) === key;
       let w = 1;
-      while (w < MAX_CELLS && c + w < cols && solid(r, c + w)) w++;
+      while (w < max && c + w < cols && same(r, c + w)) w++;
       let h = 1;
-      grow: while (h < MAX_CELLS && r + h < rows) {
-        for (let k = 0; k < w; k++) if (!solid(r + h, c + k)) break grow;
+      grow: while (h < max && r + h < rows) {
+        for (let k = 0; k < w; k++) if (!same(r + h, c + k)) break grow;
         h++;
       }
-      for (let i = 0; i < h; i++) for (let k = 0; k < w; k++) used[r + i][c + k] = 1;
-      const height = def.wallHeight + Math.floor(hash2(c * 3 + 1, r * 7 + 2) * 4);
-      const mat = BUILDING_MATS[Math.floor(hash2(c + 11, r + 5) * BUILDING_MATS.length)];
-      boxes.push({
-        min: [ox + c * cell, 0, oz + r * cell],
-        max: [ox + (c + w) * cell, height, oz + (r + h) * cell],
-        mat, kind: 'wall', uv: 'world',
-      });
+      for (let a = 0; a < h; a++) for (let k = 0; k < w; k++) used[(r + a) * cols + c + k] = 1;
+      emit(c, r, w, h, grid[i]);
     }
   }
+}
 
-  // '=' は屋根だけの箱 (下を通れる)。横に並んだものをまとめる
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (grid[r][c] !== '=') continue;
-      let w = 1;
-      while (c + w < cols && grid[r][c + w] === '=') w++;
+/**
+ * マップ定義から、衝突と描画の両方で使う箱のリストを作る
+ *
+ * 定義は「全部が建物で埋まった土地から、歩けるエリアをくり抜く」形で書く (1 マス = 1m)
+ *   areas:  { name, x0, z0, x1, z1, h?, roof?, site?, spawn? }  h は床の高さ。後に書いたものが上書きする
+ *   ramps:  { x0, z0, x1, z1, up, from, to }  up ('+x' '-x' '+z' '-z') の向きに from → to へ上る坂 (0.4m ずつの段)
+ *   solids: { x0, z0, x1, z1 }  くり抜いた中に残す柱や建物
+ *   props:  遮蔽物の箱
+ *
+ * 箱: { min:[x,y,z], max:[x,y,z], mat, kind:'floor'|'wall'|'roof'|'prop', uv:'world'|'fit' }
+ */
+export function buildMap(def) {
+  const [bx0, bz0, bx1, bz1] = def.bounds;
+  const cols = bx1 - bx0, rows = bz1 - bz0;
+  const H = new Float32Array(cols * rows).fill(SOLID);
+  const set = (x, z, h) => { if (x >= bx0 && x < bx1 && z >= bz0 && z < bz1) H[(z - bz0) * cols + (x - bx0)] = h; };
+  const fill = (a, h) => { for (let z = a.z0; z < a.z1; z++) for (let x = a.x0; x < a.x1; x++) set(x, z, h); };
+
+  for (const a of def.areas) fill(a, a.h || 0);
+  for (const r of def.ramps || []) {
+    const alongX = r.up[1] === 'x', n = alongX ? r.x1 - r.x0 : r.z1 - r.z0;
+    for (let z = r.z0; z < r.z1; z++) {
+      for (let x = r.x0; x < r.x1; x++) {
+        const i = r.up === '+x' ? x - r.x0 : r.up === '-x' ? r.x1 - 1 - x : r.up === '+z' ? z - r.z0 : r.z1 - 1 - z;
+        set(x, z, Math.round((r.from + ((r.to - r.from) * (i + 1)) / n) * 100) / 100);
+      }
+    }
+  }
+  for (const s of def.solids || []) fill(s, SOLID);
+
+  const boxes = [{ min: [bx0 - 4, -2, bz0 - 4], max: [bx1 + 4, 0, bz1 + 4], mat: 'sand', kind: 'floor', uv: 'world' }];
+
+  // 建物
+  merge(H, cols, rows, (v) => (v === SOLID ? 'w' : null), MAX_WALL, (c, r, w, h) => {
+    boxes.push({
+      min: [bx0 + c, 0, bz0 + r],
+      max: [bx0 + c + w, def.wallHeight + Math.floor(hash2(c * 3 + 1, r * 7 + 2) * 4), bz0 + r + h],
+      mat: BUILDING_MATS[Math.floor(hash2(c + 11, r + 5) * BUILDING_MATS.length)], kind: 'wall', uv: 'world',
+    });
+  });
+  // 台と坂 (床が地面より高いマス)
+  merge(H, cols, rows, (v) => (v > 0 ? v : null), 64, (c, r, w, h, v) => {
+    boxes.push({ min: [bx0 + c, 0, bz0 + r], max: [bx0 + c + w, v, bz0 + r + h], mat: 'concrete', kind: 'prop', uv: 'world' });
+  });
+
+  const spawns = { attack: [], defense: [] };
+  const sites = {};
+  for (const a of def.areas) {
+    if (a.roof) {
       boxes.push({
-        min: [ox + c * cell, def.roofY, oz + r * cell],
-        max: [ox + (c + w) * cell, def.wallHeight + 1, oz + (r + 1) * cell],
+        min: [a.x0, (a.h || 0) + ROOF_CLEAR, a.z0], max: [a.x1, def.wallHeight + 1, a.z1],
         mat: 'concrete', kind: 'roof', uv: 'world',
       });
-      c += w - 1;
+    }
+    if (a.site) sites[a.site] = { min: [a.x0, a.z0], max: [a.x1, a.z1] };
+    if (a.spawn) {
+      for (let z = a.z0 + 2; z <= a.z1 - 2; z += 3) for (let x = a.x0 + 2; x <= a.x1 - 2; x += 3) spawns[a.spawn].push({ x, z });
     }
   }
 
@@ -65,22 +96,14 @@ export function buildMap(def) {
     });
   }
 
-  // スポーンとサイトの範囲を文字から拾う
-  const spawns = { attack: [], defense: [] };
-  const sites = {};
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const ch = grid[r][c];
-      const x0 = ox + c * cell, z0 = oz + r * cell;
-      if (ch === 'a') spawns.attack.push({ x: x0 + cell / 2, z: z0 + cell / 2 });
-      else if (ch === 'd') spawns.defense.push({ x: x0 + cell / 2, z: z0 + cell / 2 });
-      else if (ch === 'A' || ch === 'B') {
-        const s = (sites[ch] ??= { min: [Infinity, Infinity], max: [-Infinity, -Infinity] });
-        s.min[0] = Math.min(s.min[0], x0); s.min[1] = Math.min(s.min[1], z0);
-        s.max[0] = Math.max(s.max[0], x0 + cell); s.max[1] = Math.max(s.max[1], z0 + cell);
-      }
-    }
-  }
+  return { def, boxes, spawns, sites, areas: def.areas, size: [cols, rows], origin: [bx0, bz0] };
+}
 
-  return { def, boxes, spawns, sites, size: [cols * cell, rows * cell], origin: [ox, oz] };
+/** その位置のエリア名 (HUD の現在地表示用)。どこでもなければ '' */
+export function areaAt(map, x, z) {
+  for (let i = map.areas.length - 1; i >= 0; i--) {
+    const a = map.areas[i];
+    if (x >= a.x0 && x < a.x1 && z >= a.z0 && z < a.z1) return a.name;
+  }
+  return '';
 }

@@ -91,7 +91,7 @@ export function stepMovement(world, p, inp, dt) {
       p.pos.y = b.max[1];
       p.onGround = true;
       p.groundMat = b.mat;
-      if (!wasGround && vy < -4) world.emit('land', { playerId: p.id, mat: b.mat });
+      if (!wasGround && vy < -5.5) world.emit('land', { playerId: p.id, mat: b.mat });
     } else {
       p.pos.y = b.min[1] - h - EPS;
     }

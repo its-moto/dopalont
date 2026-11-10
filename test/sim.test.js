@@ -31,8 +31,8 @@ const mk = () => {
   run(w, p, { mz: 1 }, 1);
   assert.ok(Math.abs(Math.hypot(p.vel.x, p.vel.z) - RUN_SPEED) < 0.01, '走り速度 6.75');
   run(w, p, { mz: 1, yaw: Math.PI }, 4); // 南の壁へ
-  assert.ok(p.pos.z < 44, `南の壁を抜けない (z=${p.pos.z})`);
-  assert.ok(p.pos.z > 43, '壁際まで進む');
+  assert.ok(p.pos.z < 58, `南の壁を抜けない (z=${p.pos.z})`);
+  assert.ok(p.pos.z > 57, '壁際まで進む');
 }
 
 // ジャンプの高さ
@@ -46,15 +46,29 @@ const mk = () => {
 // 木箱 (1.4m) には乗り越えられず、ぶつかって止まる
 {
   const { w, p } = mk();
-  p.pos.x = -26; p.pos.z = 31;
+  p.pos.x = -6; p.pos.z = 40;
   run(w, p, { mz: 1, yaw: Math.PI / 2 }, 2); // 西へ
-  assert.ok(p.pos.y < 0.01 && Math.abs(p.pos.x - -28.95) < 0.01, `木箱で止まる (x=${p.pos.x.toFixed(2)})`);
+  assert.ok(p.pos.y < 0.01 && Math.abs(p.pos.x - -8.95) < 0.01, `木箱で止まる (x=${p.pos.x.toFixed(2)})`);
+}
+
+// 坂 (0.4m の段) は歩くだけで上れる。台の縁からは飛び降りられる
+{
+  const { w, p } = mk();
+  p.pos.x = -42; p.pos.z = -17; // A サイトから西の A 台 (1.2m) へ
+  run(w, p, { mz: 1, yaw: Math.PI / 2 }, 2);
+  assert.ok(Math.abs(p.pos.y - 1.2) < 0.01, `A 台に上れる (y=${p.pos.y.toFixed(2)})`);
+  p.pos.x = -27; p.pos.z = -19.5; p.pos.y = 2.4; // A ヘブン (2.4m) の手すりのない所から、西のサイトへ
+  run(w, p, { mz: 1, yaw: Math.PI / 2 }, 2);
+  assert.ok(p.pos.y < 0.01 && p.pos.x < -34, `ヘブンから飛び降りられる (x=${p.pos.x.toFixed(1)}, y=${p.pos.y.toFixed(2)})`);
+  p.pos.x = -40; p.pos.z = -22; p.pos.y = 0;  // 下からは上れない
+  run(w, p, { mz: 1, yaw: -Math.PI / 2, jump: true }, 2);
+  assert.ok(p.pos.x < -34, '2.4m の壁はジャンプでも上れない');
 }
 
 // 的 t0 (0,25) の頭を撃つとヴァンガードは 1 発で倒せる
 {
   const { w, p } = mk();
-  const dz = 40 - 25, dy = 1.64 - 1.62;
+  const dz = 50 - 35, dy = 1.64 - 1.62;
   const ev = run(w, p, { fire: true, pitch: Math.atan2(dy, dz) }, TICK);
   const hit = ev.find((e) => e.type === 'hit');
   assert.ok(hit, '命中');
@@ -92,7 +106,7 @@ const mk = () => {
 {
   const spreadOf = (inp) => {
     const { w, p } = mk();
-    p.pos.x = -48; p.pos.z = 30; // A ロングを北に向かって撃つ
+    p.pos.x = -45; p.pos.z = 20; // A メインを北に向かって撃つ
     const ev = run(w, p, { ...inp, fire: true }, 0.25).filter((e) => e.type === 'shot');
     const first = ev[0].impacts[0].point, o = ev[0].origin;
     const dx = first[0] - o[0], dy = first[1] - o[1], dz = first[2] - o[2];

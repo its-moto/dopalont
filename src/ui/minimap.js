@@ -1,4 +1,5 @@
 import { blocked } from '../sim/combat.js';
+import { areaAt } from '../sim/map.js';
 
 // 左上の半透明ミニマップ。北が上で固定
 // 敵は「自分から見えている間」と、見失ってから少しの間だけ表示する
@@ -20,6 +21,8 @@ export class Minimap {
     this.offX = (this.px - map.size[0] * this.scale) / 2;
     this.offY = (this.px - map.size[1] * this.scale) / 2;
     this.bg = this.drawBackground();
+    this.areaEl = document.getElementById('area');
+    this.area = '';
     this.seen = new Map(); // 敵 ID → 最後に見えた時刻と位置
     this.time = 0;
     this.tick = 0;
@@ -88,6 +91,10 @@ export class Minimap {
     const g = this.ctx, u = this.px / SIZE;
     g.clearRect(0, 0, this.px, this.px);
     g.drawImage(this.bg, 0, 0);
+
+    // 現在地 (坂など名前のない所では、直前の名前のまま)
+    const area = view ? areaAt(this.map, view.x, view.z) : '';
+    if (area && area !== this.area) { this.area = area; this.areaEl.textContent = area; }
 
     const eye = view ? [view.x, view.y + EYE, view.z] : null;
     for (const t of targets) if (t.alive) this.dot(t.pos.x, t.pos.z, 2.6 * u, '#ff5a4a');
