@@ -110,7 +110,7 @@ export function buildMap(def) {
     });
   }
 
-  return { def, boxes, spawns, sites, areas: def.areas, size: [cols, rows], origin: [bx0, bz0] };
+  return { def, boxes, spawns, sites, areas: def.areas, size: [cols, rows], origin: [bx0, bz0], heights: H };
 }
 
 /** その位置のエリア名 (HUD の現在地表示用)。どこでもなければ '' */
@@ -120,4 +120,11 @@ export function areaAt(map, x, z) {
     if (x >= a.x0 && x < a.x1 && z >= a.z0 && z < a.z1 && (!a.poly || inPoly(a.poly, x, z))) return a.name;
   }
   return '';
+}
+
+/** その位置の床の高さ (m)。建物の中なら -1 */
+export function floorAt(map, x, z) {
+  const cx = Math.floor(x) - map.origin[0], cz = Math.floor(z) - map.origin[1];
+  if (cx < 0 || cz < 0 || cx >= map.size[0] || cz >= map.size[1]) return -1;
+  return map.heights[cz * map.size[0] + cx];
 }

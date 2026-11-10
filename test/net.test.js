@@ -1,7 +1,7 @@
 // ホストと参加側の同期の確認 (PeerJS は使わず、メッセージを直接受け渡す)。`npm test` で実行
 import assert from 'node:assert/strict';
 import { TICK } from '../src/sim/world.js';
-import { FOUNDRY } from '../src/data/maps/foundry.js';
+import { FOUNDRY } from './fixture-map.js';
 import { HostSession } from '../src/net/host.js';
 import { ClientSession } from '../src/net/client.js';
 import * as L from '../src/net/lobby.js';

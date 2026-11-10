@@ -1,7 +1,7 @@
 // sim の動作確認。`npm test` で実行
 import assert from 'node:assert/strict';
 import { World, TICK } from '../src/sim/world.js';
-import { FOUNDRY } from '../src/data/maps/foundry.js';
+import { FOUNDRY } from './fixture-map.js';
 import { RUN_SPEED } from '../src/sim/movement.js';
 import { WEAPONS } from '../src/data/weapons.js';
 

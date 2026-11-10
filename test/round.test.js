@@ -1,7 +1,7 @@
 // ラウンド・スパイク・経済・購入の確認。`npm test` で実行
 import assert from 'node:assert/strict';
 import { World, TICK } from '../src/sim/world.js';
-import { FOUNDRY } from '../src/data/maps/foundry.js';
+import { FOUNDRY } from './fixture-map.js';
 import { startRound, buy, sell } from '../src/sim/round.js';
 import { RULES } from '../src/data/rules.js';
 import { WEAPONS } from '../src/data/weapons.js';
