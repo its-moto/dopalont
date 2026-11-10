@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>キュイン・ストライク (仮)</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <!-- ゲーム中の表示 -->
+  <div id="hud" hidden>
+    <div id="edge"></div>
+    <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="dmg-layer"></div>
+
+    <div id="vitals">
+      <div class="stat"><span class="label">HP</span><span id="hp">100</span></div>
+      <div class="stat armor"><span class="label">アーマー</span><span id="armor">0</span></div>
+    </div>
+    <div id="weapon">
+      <div id="weapon-name">ヴァンガード</div>
+      <div id="ammo"><span id="ammo-mag">25</span><span class="sep">/</span><span id="ammo-res">∞</span></div>
+      <div id="reload-bar"><div></div></div>
+    </div>
+    <div id="stats">
+      <div>キル <b id="st-kills">0</b></div>
+      <div>HS 率 <b id="st-hs">-</b></div>
+      <div>命中率 <b id="st-acc">-</b></div>
+      <div class="fps"><b id="st-fps">0</b> fps</div>
+    </div>
+    <div id="hints">
+      <b>WASD</b> 移動　<b>Shift</b> 歩き　<b>Ctrl</b> しゃがみ　<b>Space</b> ジャンプ<br>
+      <b>左クリック</b> 射撃　<b>右クリック</b> ADS / バースト　<b>R</b> リロード　<b>1 / 2</b> 武器切り替え　<b>Esc</b> メニュー
+    </div>
+
+    <div id="dopa">
+      <div id="dopa-stamp"></div>
+      <div id="dopa-combo"><span id="dopa-reel">0</span><span class="unit">KILL</span></div>
+    </div>
+    <div id="dopa-ace">ACE!!</div>
+    <div id="confetti"></div>
+  </div>
+
+  <!-- タイトル -->
+  <div id="title" class="screen">
+    <div class="panel">
+      <h1>キュイン・ストライク<small>(仮)</small></h1>
+      <p class="tagline">ガチの撃ち合い × 脳汁演出</p>
+      <label>プレイヤー名 <input id="name" maxlength="16" placeholder="なまえ" autocomplete="off"></label>
+      <button id="btn-range" class="primary">射撃場で遊ぶ</button>
+      <button disabled>部屋を作る <small>(Phase 2 で実装)</small></button>
+      <button disabled>コードで参加 <small>(Phase 2 で実装)</small></button>
+    </div>
+  </div>
+
+  <!-- 読み込み -->
+  <div id="loading" class="screen" hidden>
+    <div class="panel">
+      <p id="loading-text">テクスチャを生成中…</p>
+      <div class="bar"><div id="loading-bar"></div></div>
+    </div>
+  </div>
+
+  <!-- 一時停止 / 設定 -->
+  <div id="pause" class="screen" hidden>
+    <div class="panel">
+      <h2>クリックで再開</h2>
+      <button id="btn-resume" class="primary">ゲームに戻る</button>
+      <label>マウス感度 <output id="sens-out"></output>
+        <input id="sens" type="range" min="0.05" max="2" step="0.01"></label>
+      <label>音量 <output id="vol-out"></output>
+        <input id="vol" type="range" min="0" max="1" step="0.01"></label>
+      <label>演出
+        <select id="fx">
+          <option value="dopamine">ドパミン (全部盛り)</option>
+          <option value="subtle">控えめ</option>
+          <option value="off">OFF</option>
+        </select></label>
+      <button id="btn-fullscreen">フルスクリーン (Ctrl+W でタブが閉じるのを防ぐ)</button>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

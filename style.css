@@ -1,0 +1,114 @@
+:root {
+  --bg: #0d0f14;
+  --panel: rgba(18, 21, 29, 0.92);
+  --text: #eef1f6;
+  --dim: #8d95a5;
+  --accent: #ff3d7f;
+  --accent2: #ffd23f;
+  --dopa: #33aaff;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+  font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; user-select: none; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ---- 画面 (タイトル・読み込み・一時停止) ---- */
+.screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
+#title { background: radial-gradient(ellipse at 50% 30%, #2a1230 0%, #0d0f14 65%); }
+#loading { background: var(--bg); }
+#pause { background: rgba(5, 6, 10, 0.6); backdrop-filter: blur(4px); }
+.panel { width: min(420px, 100%); background: var(--panel); border: 1px solid #2b3040; border-radius: 14px; padding: 28px;
+  display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+h1 { margin: 0; font-size: 34px; letter-spacing: 0.02em; line-height: 1.15;
+  background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+h1 small { font-size: 14px; margin-left: 8px; color: var(--dim); -webkit-text-fill-color: var(--dim); }
+h2 { margin: 0; font-size: 22px; }
+.tagline { margin: 0 0 6px; color: var(--dim); }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--dim); }
+label output { color: var(--text); font-variant-numeric: tabular-nums; }
+input, select, button { font: inherit; color: var(--text); }
+input:not([type=range]), select { background: #0b0d12; border: 1px solid #2b3040; border-radius: 8px; padding: 10px 12px; font-size: 15px; }
+input[type=range] { accent-color: var(--accent); }
+button { background: #232838; border: 1px solid #343a4d; border-radius: 8px; padding: 12px; font-size: 15px; cursor: pointer; }
+button:hover:not(:disabled) { background: #2d3348; }
+button:disabled { opacity: 0.45; cursor: default; }
+button small { color: var(--dim); }
+button.primary { background: linear-gradient(90deg, var(--accent), #ff7a3d); border: 0; font-weight: 700; font-size: 17px; }
+button.primary:hover { filter: brightness(1.12); }
+.bar { height: 8px; background: #0b0d12; border-radius: 4px; overflow: hidden; }
+.bar div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.15s; }
+
+/* ---- HUD ---- */
+#hud { position: fixed; inset: 0; z-index: 10; pointer-events: none; font-variant-numeric: tabular-nums; }
+#crosshair, #hitmarker { position: absolute; left: 50%; top: 50%; }
+#crosshair i { position: absolute; background: #3dffb0; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+#crosshair i:nth-child(1) { width: 2px; height: 7px; left: -1px; top: -11px; }
+#crosshair i:nth-child(2) { width: 2px; height: 7px; left: -1px; top: 4px; }
+#crosshair i:nth-child(3) { width: 7px; height: 2px; left: -11px; top: -1px; }
+#crosshair i:nth-child(4) { width: 7px; height: 2px; left: 4px; top: -1px; }
+#crosshair b { position: absolute; width: 2px; height: 2px; left: -1px; top: -1px; background: #3dffb0; }
+#hitmarker { opacity: 0; }
+#hitmarker i { position: absolute; width: 2px; height: 10px; background: #fff; left: -1px; top: -5px; box-shadow: 0 0 3px #000; }
+#hitmarker i:nth-child(1) { transform: rotate(45deg) translateY(-13px); }
+#hitmarker i:nth-child(2) { transform: rotate(135deg) translateY(-13px); }
+#hitmarker i:nth-child(3) { transform: rotate(225deg) translateY(-13px); }
+#hitmarker i:nth-child(4) { transform: rotate(315deg) translateY(-13px); }
+#hitmarker.show { animation: hm 0.22s ease-out; }
+#hitmarker.head i { background: var(--accent2); }
+#hitmarker.kill i { background: #ff4040; height: 14px; }
+@keyframes hm { 0% { opacity: 1; transform: scale(1.35); } 100% { opacity: 0; transform: scale(1); } }
+
+.dmg { position: absolute; font-weight: 800; font-size: 18px; color: #fff; text-shadow: 0 0 4px #000, 0 2px 0 #000; animation: dmg 0.7s ease-out forwards; }
+.dmg.head { color: var(--accent2); font-size: 24px; }
+@keyframes dmg { 0% { transform: translate(-50%, -50%) scale(1.5); opacity: 1; } 100% { transform: translate(-50%, -190%) scale(1); opacity: 0; } }
+
+#vitals { position: absolute; left: 28px; bottom: 26px; display: flex; gap: 22px; }
+.stat { display: flex; flex-direction: column; }
+.stat .label { font-size: 11px; color: var(--dim); letter-spacing: 0.08em; }
+.stat span:last-child { font-size: 40px; font-weight: 800; line-height: 1; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+.stat.armor span:last-child { color: #6fc4ff; }
+#weapon { position: absolute; right: 28px; bottom: 26px; text-align: right; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+#weapon-name { font-size: 13px; color: var(--dim); letter-spacing: 0.08em; }
+#ammo { font-size: 44px; font-weight: 800; line-height: 1; }
+#ammo .sep { font-size: 22px; color: var(--dim); margin: 0 6px; }
+#ammo-res { font-size: 22px; color: var(--dim); }
+#ammo.low #ammo-mag { color: #ff5050; }
+#reload-bar { height: 4px; margin-top: 6px; background: rgba(0, 0, 0, 0.4); border-radius: 2px; overflow: hidden; opacity: 0; }
+#reload-bar.on { opacity: 1; }
+#reload-bar div { height: 100%; width: 0; background: var(--accent2); }
+#stats { position: absolute; right: 24px; top: 20px; text-align: right; font-size: 13px; color: var(--dim); line-height: 1.6; text-shadow: 0 1px 3px #000; }
+#stats b { color: var(--text); font-size: 15px; }
+#hints { position: absolute; left: 24px; top: 20px; font-size: 12px; color: #c5cbd8; line-height: 1.7; text-shadow: 0 1px 3px #000; }
+#hints b { color: #fff; background: rgba(0, 0, 0, 0.45); border-radius: 3px; padding: 1px 5px; }
+
+/* ---- ドパミン演出 ---- */
+#edge { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 140px 36px var(--dopa); }
+#edge.flash { animation: edge 0.6s ease-out; }
+#edge.rainbow { animation: edge 2.4s ease-out, hue 0.5s linear infinite; }
+@keyframes edge { 0% { opacity: 0.95; } 100% { opacity: 0; } }
+@keyframes hue { to { filter: hue-rotate(360deg); } }
+
+#dopa { position: absolute; left: 50%; bottom: 24%; transform: translateX(-50%); text-align: center; opacity: 0; }
+#dopa.show { animation: dopa 1.5s ease-out forwards; }
+@keyframes dopa { 0% { opacity: 0; transform: translateX(-50%) scale(1.8); } 8% { opacity: 1; transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-12px); } }
+#dopa-stamp { font-size: 22px; font-weight: 900; letter-spacing: 0.2em; color: var(--accent2); text-shadow: 0 0 12px var(--accent2), 0 2px 0 #000; min-height: 28px; }
+#dopa-combo { font-weight: 900; color: var(--dopa); text-shadow: 0 0 18px var(--dopa), 0 3px 0 #000; }
+#dopa-reel { display: inline-block; font-size: 74px; line-height: 1; min-width: 0.7em; }
+#dopa-reel.spin { filter: blur(2px); }
+#dopa-combo .unit { font-size: 26px; margin-left: 8px; letter-spacing: 0.1em; }
+#dopa.rainbow #dopa-combo, #dopa-ace { background: linear-gradient(90deg, #ff3d3d, #ffb13d, #f5ff3d, #3dff7a, #3dc8ff, #b13dff, #ff3d3d);
+  background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+  filter: drop-shadow(0 0 14px rgba(255, 255, 255, 0.7)); animation: slide 0.7s linear infinite; }
+@keyframes slide { to { background-position: -200% 0; } }
+
+#dopa-ace { position: absolute; left: 50%; top: 30%; font-size: min(22vw, 220px); font-weight: 900; font-style: italic; letter-spacing: -0.02em;
+  transform: translate(-50%, -50%); opacity: 0; white-space: nowrap; }
+#dopa-ace.show { animation: ace 2.6s cubic-bezier(0.2, 1.4, 0.4, 1) forwards, slide 0.7s linear infinite; }
+@keyframes ace { 0% { opacity: 0; transform: translate(-50%, -50%) scale(4) rotate(-8deg); } 12% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-4deg); }
+  80% { opacity: 1; transform: translate(-50%, -50%) scale(1.06) rotate(-4deg); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.3) rotate(-4deg); } }
+
+#confetti { position: absolute; inset: 0; overflow: hidden; }
+#confetti i { position: absolute; top: -20px; width: 10px; height: 16px; animation: fall linear forwards; }
+@keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }

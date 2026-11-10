@@ -264,9 +264,10 @@ v1 はゲイル・エンバー・ヘイズ・シーア・メンドの 5 体。�
 - アルティメットオーブ 2 か所
 
 ### 7.2 当たり判定
-- プレイヤー: カプセル vs 箱のスイープ判定 (段差 0.4m までは自動で乗り越え)
+- プレイヤー: 箱 (AABB、幅 0.7m) vs 箱を軸ごとに判定 (段差 0.45m までは自動で乗り越え)
 - 射撃: レイ vs 箱 (壁) / プレイヤーのヒットボックス (頭 = 球、胴 = 箱、脚 = 箱)
-- 空間分割: 一様グリッドで箱を検索
+- 箱は 100 個程度なので総当たり。重くなったら一様グリッドで絞り込む
+- マップは文字グリッド (1 マス 4m) + 遮蔽物リストで定義し、`src/sim/map.js` が箱に変換する
 
 ---
 
@@ -376,10 +377,12 @@ index.html              エントリ (importmap, UI のルート要素)
 style.css
 src/
   main.js               起動、画面遷移
+  game.js               クライアント側のまとめ役 (sim の状態とイベントを描画・音・HUD に流す)
   core/                 ループ、入力、設定 (localStorage)、イベントバス、数学ユーティリティ
   net/                  config.js, peer.js (PeerJS ラッパー), host.js, client.js, protocol.js
   sim/                  ホスト権威のゲームシミュレーション (描画に依存しない)
     world.js            状態全体
+    map.js              マップ定義 → 箱のリスト
     movement.js         移動・衝突
     combat.js           射撃・ダメージ・ラグ補償
     round.js            ラウンド・スパイク・勝敗
@@ -387,10 +390,12 @@ src/
     abilities/          Ability 基底 + 各アビリティ
     bot.js
   data/                 weapons.js, agents.js, economy.js, maps/foundry.js  ← 数値はここ
-  render/               scene.js, textures.js, noise.js, materials.js, map.js, characters.js,
-                        viewmodel.js, effects.js, postfx.js
+  render/               scene.js, textures.js (素材もここ), noise.js, map.js, targets.js,
+                        viewmodel.js, effects.js  (今後: characters.js, postfx.js)
   audio/                engine.js, sfx.js
-  ui/                   title.js, lobby.js, hud.js, buymenu.js, scoreboard.js, settings.js
+  ui/                   hud.js, dopamine.js  (今後: lobby.js, buymenu.js, scoreboard.js, settings.js)
+test/
+  sim.test.js           sim のテスト (`npm test`)
 ```
 
 **原則**: `sim/` は three.js にも DOM にも依存しない純粋なロジック (Node でテスト可能にする)。描画と音は sim の状態とイベントを見て表現するだけ。
@@ -402,13 +407,14 @@ src/
 各フェーズ完了ごとに動作確認 → コミット。チェックボックスは進捗に合わせて更新する。
 
 ### Phase 1: 土台 (1 人で動く)
-- [ ] index.html + importmap、画面遷移の骨組み
-- [ ] ノイズテクスチャ生成、マップ「ファウンドリー」の箱配置、ライティング
-- [ ] FPS 移動 (走り/歩き/しゃがみ/ジャンプ、衝突)
-- [ ] 射撃 (ピン、ヴァンガード)、拡散・反動パターン、弾痕、ビューモデル
-- [ ] 射撃場の的、ヒット部位判定、ダメージ表示
-- [ ] 音エンジン + 銃声・足音
-- [ ] ドパミン演出の試作 (キル「キュイン」、HS、連続キル) を射撃場で先に作り、気持ちよさを確認
+- [x] index.html + importmap、画面遷移の骨組み
+- [x] ノイズテクスチャ生成、マップ「ファウンドリー」の箱配置、ライティング
+- [x] FPS 移動 (走り/歩き/しゃがみ/ジャンプ、衝突)
+- [x] 射撃 (ピン、ヴァンガード)、拡散・反動パターン、弾痕、ビューモデル
+- [x] 射撃場の的、ヒット部位判定、ダメージ表示
+- [x] 音エンジン + 銃声・足音
+- [x] ドパミン演出の試作 (キル「キュイン」、HS、連続キル、5 連続で ACE)
+- [ ] 実際に遊んで調整 (反動・拡散・音・演出の気持ちよさ、ビューモデルの大きさ)
 
 ### Phase 2: 通信
 - [ ] タイトル → 部屋作成 / コード参加
@@ -421,6 +427,7 @@ src/
 - [ ] ラウンド進行、攻守交代、延長戦、勝敗
 - [ ] スパイク (所持/落とす/設置/解除/爆発)
 - [ ] 経済 + 購入メニュー + 全武器 + アーマー
+- [ ] ナイフ、壁抜き、被弾時の減速 (Phase 1 では未実装)
 - [ ] HUD 一式、スコアボード、観戦
 
 ### Phase 4: アビリティ
@@ -439,6 +446,7 @@ src/
 ---
 
 ## 14. 未決事項 (決まり次第ここを更新)
+- ゲームの正式名 (画面のタイトルは仮で「キュイン・ストライク」)
 - ホスト移行をやるか (v1 はやらない)
 - 2 枚目のマップ
 - 公開場所 (GitHub Pages 想定)
