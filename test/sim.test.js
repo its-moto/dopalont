@@ -8,7 +8,7 @@ import { WEAPONS } from '../src/data/weapons.js';
 const base = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, slot: null, yaw: 0, pitch: 0 };
 const run = (w, p, inp, secs) => {
   const ev = [];
-  for (let i = 0; i < Math.round(secs / TICK); i++) { w.step(TICK, { [p.id]: { ...base, ...inp } }); ev.push(...w.drainEvents()); }
+  for (let i = 0; i < Math.round(secs / TICK); i++) { w.step(TICK, { [p.id]: [{ ...base, ...inp }] }); ev.push(...w.drainEvents()); }
   return ev;
 };
 const mk = () => {
@@ -39,7 +39,7 @@ const mk = () => {
 {
   const { w, p } = mk();
   let top = 0;
-  for (let i = 0; i < 64; i++) { w.step(TICK, { me: { ...base, jump: i === 0 } }); top = Math.max(top, p.pos.y); }
+  for (let i = 0; i < 64; i++) { w.step(TICK, { me: [{ ...base, jump: i === 0 }] }); top = Math.max(top, p.pos.y); }
   assert.ok(top > 1.0 && top < 1.2, `ジャンプ約 1.1m (${top.toFixed(2)})`);
 }
 
@@ -103,6 +103,65 @@ const mk = () => {
   moving = spreadOf({ mx: 1 });
   assert.ok(still <= WEAPONS.ar_tap.spread.first + 0.01, `静止 1 発目は正確 (${still.toFixed(2)}°)`);
   assert.ok(moving >= 0, '移動撃ちも動作する');
+}
+
+// ---- 対人 (Phase 2) ----
+const mkPvp = () => {
+  const w = new World(FOUNDRY, { seed: 3, targets: false, respawn: true });
+  const a = w.addPlayer('a', { team: 'attack', name: 'A' });
+  const b = w.addPlayer('b', { team: 'defense', name: 'B' });
+  const c = w.addPlayer('c', { team: 'attack', name: 'C' });
+  for (const p of [a, b, c]) w.spawn(p);
+  w.drainEvents();
+  return { w, a, b, c };
+};
+const stepAll = (w, cmds, n) => { const ev = []; for (let i = 0; i < n; i++) { w.step(TICK, cmds); ev.push(...w.drainEvents()); } return ev; };
+
+// 敵は撃てる、味方は撃てない、キルで復活待ちになる
+{
+  const { w, a, b, c } = mkPvp();
+  const place = (p, x, z) => { p.pos.x = x; p.pos.z = z; p.pos.y = 0; p.histN = 0; };
+  place(a, 0, 20); place(c, 0, 16); place(b, 0, 10); // a の正面に味方 c、その奥に敵 b
+  const pitch = Math.atan2(1.64 - 1.62, 10);
+  const ev = stepAll(w, { a: [{ ...base, fire: true, pitch, seq: 1 }] }, 1);
+  const hit = ev.find((e) => e.type === 'hit');
+  assert.equal(hit?.victimId, 'b', '味方を貫通して敵に当たる');
+  assert.equal(b.alive, false);
+  assert.equal(a.kills, 1); assert.equal(b.deaths, 1);
+  assert.equal(a.ack, 1, '処理した入力番号を覚える');
+  const ev2 = stepAll(w, {}, Math.round(3.1 / TICK));
+  assert.ok(ev2.some((e) => e.type === 'respawn' && e.playerId === 'b'), '3 秒で復活');
+  assert.equal(b.hp, 100);
+}
+
+// ラグ補償: 敵が動いた後でも、撃った人に見えていた過去の位置に当たる
+{
+  const { w, a, b } = mkPvp();
+  a.pos.x = 0; a.pos.z = 20; b.pos.x = 0; b.pos.z = 10; b.pos.y = 0;
+  stepAll(w, {}, 20);                 // b は (0,10) に立っている
+  b.pos.x = 3;                        // 急に横へ動いた
+  stepAll(w, {}, 6);                  // 約 0.09 秒経過
+  const pitch = Math.atan2(1.2 - 1.62, 10);
+  a.lagComp = 0;
+  let ev = stepAll(w, { a: [{ ...base, fire: true, pitch }] }, 1);
+  assert.ok(!ev.some((e) => e.type === 'hit'), '補償なしでは古い位置に当たらない');
+  stepAll(w, { a: [{ ...base, pitch }] }, 1);
+  a.lagComp = 0.2;
+  a.weapons.primary.nextFire = 0;
+  ev = stepAll(w, { a: [{ ...base, fire: true, pitch }] }, 1);
+  assert.ok(ev.some((e) => e.type === 'hit' && e.victimId === 'b'), '0.2 秒前の位置に当たる');
+}
+
+// 入力を 2 個まとめて渡すと 2 tick ぶん動く (クライアントの予測と一致させるため)
+{
+  const { w, a } = mkPvp();
+  stepAll(w, {}, 40);
+  const z0 = a.pos.z;
+  const cmd = { ...base, mz: 1 };
+  stepAll(w, { a: [cmd] }, 64);
+  const one = z0 - a.pos.z; a.pos.z = z0; a.vel.z = 0;
+  stepAll(w, { a: [cmd, cmd] }, 32);
+  assert.ok(Math.abs((z0 - a.pos.z) - one) < 0.2, '同じ入力数なら同じ距離');
 }
 
 console.log('sim: すべて OK');

@@ -40,11 +40,12 @@ export class Sfx {
   get ok() { return !!this.e.ctx; }
 
   // ---- 武器 ----
-  gunshot(kind) {
+  /** at を渡すと、その位置から聞こえる (他プレイヤーの銃声) */
+  gunshot(kind, at = null) {
     if (!this.ok) return;
     const e = this.e, t = e.now, r = GUNS[kind];
     const pv = 0.96 + Math.random() * 0.08; // 毎発わずかに変えて機械的に聞こえないように
-    const dest = e.gunIn;
+    const dest = at ? e.spatial(at, e.gunIn, 9) : e.gunIn;
     e.noise({ t, type: 'highpass', f: r.crack.f * pv, dur: r.crack.dur, gain: r.crack.gain, dest });
     e.tone({ t, f0: r.body.f0 * pv, f1: r.body.f1, dur: r.body.dur, gain: r.body.gain, dest });
     if (r.sub) e.tone({ t, type: 'triangle', f0: r.sub.f0, f1: r.sub.f1, dur: r.sub.dur, gain: r.sub.gain, dest });
@@ -106,12 +107,18 @@ export class Sfx {
   }
 
   // ---- 移動 ----
-  footstep(mat) {
+  /** at を渡すと、その位置から聞こえる (他プレイヤーの足音) */
+  footstep(mat, at = null) {
     if (!this.ok) return;
     const e = this.e, t = e.now, s = STEPS[mat] || STEPS.concrete;
-    const pan = e.ctx.createStereoPanner();
-    pan.pan.value = (this.stepSide = -this.stepSide) * 0.18;
-    pan.connect(e.buses.step);
+    let pan;
+    if (at) {
+      pan = e.spatial(at, e.buses.step, 5);
+    } else {
+      pan = e.ctx.createStereoPanner();
+      pan.pan.value = (this.stepSide = -this.stepSide) * 0.18;
+      pan.connect(e.buses.step);
+    }
     const pv = 0.9 + Math.random() * 0.2;
     e.tone({ t, f0: 115 * pv, f1: 52, dur: 0.07, gain: 0.3, dest: pan });
     e.noise({ t, f: s.f * pv, q: s.q, dur: s.dur, gain: s.gain, dest: pan });
@@ -129,6 +136,22 @@ export class Sfx {
     const e = this.e, t = e.now, s = STEPS[mat] || STEPS.concrete;
     e.tone({ t, f0: 130, f1: 42, dur: 0.14, gain: 0.5, dest: e.buses.step });
     e.noise({ t, f: s.f * 0.7, q: 0.8, dur: 0.11, gain: 0.3, dest: e.buses.step });
+  }
+
+  /** 自分が撃たれた */
+  hurt() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, f0: 150, f1: 55, dur: 0.16, gain: 0.55, dest: e.buses.world });
+    e.noise({ t, f: 700, q: 0.7, dur: 0.09, gain: 0.35, dest: e.buses.world });
+  }
+
+  /** 自分がやられた: しょぼい下降音 */
+  death() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, type: 'sawtooth', f0: 420, f1: 70, dur: 0.6, gain: 0.2, dest: e.uiIn });
+    e.tone({ t: t + 0.05, type: 'square', f0: 210, f1: 50, dur: 0.6, gain: 0.12, dest: e.uiIn });
   }
 
   // ---- 命中 ----

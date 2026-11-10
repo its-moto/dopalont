@@ -108,11 +108,11 @@ export class AudioEngine {
   }
 
   /** 位置つきの出力先を作る */
-  spatial(point, dest) {
+  spatial(point, dest, ref = 4) {
     const p = this.ctx.createPanner();
     p.panningModel = 'equalpower';
     p.distanceModel = 'inverse';
-    p.refDistance = 4; p.rolloffFactor = 1.3; p.maxDistance = 200;
+    p.refDistance = ref; p.rolloffFactor = 1.3; p.maxDistance = 200;
     p.positionX.value = point[0]; p.positionY.value = point[1]; p.positionZ.value = point[2];
     p.connect(dest);
     return p;

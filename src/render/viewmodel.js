@@ -11,7 +11,7 @@ const M = {
   sleeve: new THREE.MeshStandardMaterial({ color: 0x2c4a63, roughness: 0.85 }),
 };
 
-const MODEL_SCALE = 0.72; // 画面を占めすぎないように全体を縮める
+const MODEL_SCALE = 0.6; // 画面を占めすぎないように全体を縮める
 
 function box(parent, mat, w, h, d, x, y, z, rx = 0, ry = 0, rz = 0) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -41,7 +41,7 @@ function buildRifle() {
   box(g, M.glove, 0.07, 0.06, 0.09, -0.005, -0.005, -0.34);
   box(g, M.sleeve, 0.07, 0.07, 0.36, -0.12, -0.13, -0.2, 0.6, 0.75);
   return { group: g, mag, magRest: mag.position.clone(), muzzle: new THREE.Vector3(0, 0.04, -0.7),
-    base: new THREE.Vector3(0.15, -0.155, -0.4), ads: new THREE.Vector3(0, -0.079, -0.3) };
+    base: new THREE.Vector3(0.16, -0.165, -0.42), ads: new THREE.Vector3(0, -0.066, -0.3) };
 }
 
 function buildPistol() {

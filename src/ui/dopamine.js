@@ -5,12 +5,14 @@ import { retrigger } from './hud.js';
 const $ = (id) => document.getElementById(id);
 const COLORS = ['#33aaff', '#33aaff', '#44ff66', '#ff4444', '#ffcc33']; // 1〜4 連続。5 以上は虹
 const CONFETTI = ['#ff3d3d', '#ffb13d', '#f5ff3d', '#3dff7a', '#3dc8ff', '#b13dff', '#ff3dc8'];
-const STREAK_TIMEOUT = 5; // 射撃場では 5 秒キルがないと連続が切れる (本番はラウンド単位)
+const STREAK_TIMEOUT = 5; // 射撃場では 5 秒キルがないと連続が切れる (対戦では死ぬまで続く)
 
 export class Dopamine {
-  constructor(sfx, settings) {
+  /** timeout: この秒数キルがないと連続が切れる。Infinity なら reset() を呼ぶまで続く */
+  constructor(sfx, settings, timeout = STREAK_TIMEOUT) {
     this.sfx = sfx;
     this.settings = settings;
+    this.timeout = timeout;
     this.streak = 0;
     this.timer = 0;
     this.reelTimer = 0;
@@ -24,10 +26,12 @@ export class Dopamine {
     }
   }
 
+  reset() { this.streak = 0; }
+
   kill({ headshot }) {
     const level = this.settings.fx;
     this.streak++;
-    this.timer = STREAK_TIMEOUT;
+    this.timer = this.timeout;
     if (level === 'off') return;
     const n = this.streak;
     this.sfx.kill({ streak: n, headshot, level });

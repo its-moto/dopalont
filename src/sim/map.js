@@ -42,6 +42,21 @@ export function buildMap(def) {
     }
   }
 
+  // '=' は屋根だけの箱 (下を通れる)。横に並んだものをまとめる
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c] !== '=') continue;
+      let w = 1;
+      while (c + w < cols && grid[r][c + w] === '=') w++;
+      boxes.push({
+        min: [ox + c * cell, def.roofY, oz + r * cell],
+        max: [ox + (c + w) * cell, def.wallHeight + 1, oz + (r + 1) * cell],
+        mat: 'concrete', kind: 'roof', uv: 'world',
+      });
+      c += w - 1;
+    }
+  }
+
   for (const p of def.props || []) {
     const y = p.y || 0;
     boxes.push({
@@ -67,5 +82,5 @@ export function buildMap(def) {
     }
   }
 
-  return { def, boxes, spawns, sites, size: [cols * cell, rows * cell] };
+  return { def, boxes, spawns, sites, size: [cols * cell, rows * cell], origin: [ox, oz] };
 }

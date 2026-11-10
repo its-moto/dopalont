@@ -6,10 +6,11 @@ const MAX_RANGE = 400;
 const ARMOR_ABSORB = 0.66; // DESIGN.md §4.4
 const FIRE_BUFFER = 0.08;  // セミオートの先行入力を受け付ける時間
 
-// ヒットボックス (足元基準)。頭は球、胴と脚は箱
-const HEAD_R = 0.17, HEAD_Y = 1.64;
-const BODY = { hw: 0.3, y0: 0.85, y1: 1.5 };
-const LEGS = { hw: 0.26, y0: 0, y1: 0.85 };
+// ヒットボックス (足元基準)。頭は球、胴と脚は箱。しゃがむと全体が低くなる
+const HEAD_R = 0.17;
+const HEAD_Y = [1.64, 1.1], HIP_Y = [0.85, 0.55], NECK_Y = [1.5, 1.0];
+const BODY_HW = 0.3, LEG_HW = 0.26;
+const KILL_RESPAWN = { target: 2.5, player: 3 };
 
 export function createLoadout(ids) {
   const out = {};
@@ -50,15 +51,47 @@ function raySphere(o, d, cx, cy, cz, r, tMax) {
 }
 
 const _min = [0, 0, 0], _max = [0, 0, 0];
-function rayPart(o, d, pos, part, tMax) {
-  _min[0] = pos.x - part.hw; _min[1] = pos.y + part.y0; _min[2] = pos.z - part.hw;
-  _max[0] = pos.x + part.hw; _max[1] = pos.y + part.y1; _max[2] = pos.z + part.hw;
+function rayPart(o, d, pos, hw, y0, y1, tMax) {
+  _min[0] = pos.x - hw; _min[1] = pos.y + y0; _min[2] = pos.z - hw;
+  _max[0] = pos.x + hw; _max[1] = pos.y + y1; _max[2] = pos.z + hw;
   return rayBox(o, d, _min, _max, tMax);
 }
 
-/** 壁と的に対する最も近い命中を返す */
-export function raycast(world, o, d, maxDist = MAX_RANGE) {
-  const hit = { t: maxDist, kind: 'none', normal: null, mat: null, target: null, part: null };
+/** 人型 1 体との交差。当たった部位を hit に書く */
+function rayBody(o, d, ent, pos, crouch, hit) {
+  const headY = lerp(HEAD_Y[0], HEAD_Y[1], crouch), hip = lerp(HIP_Y[0], HIP_Y[1], crouch), neck = lerp(NECK_Y[0], NECK_Y[1], crouch);
+  let t = raySphere(o, d, pos.x, pos.y + headY, pos.z, HEAD_R, hit.t);
+  let part = 'head';
+  const tb = rayPart(o, d, pos, BODY_HW, hip, neck, hit.t);
+  if (tb >= 0 && (t < 0 || tb < t)) { t = tb; part = 'body'; }
+  const tl = rayPart(o, d, pos, LEG_HW, 0, hip, hit.t);
+  if (tl >= 0 && (t < 0 || tl < t)) { t = tl; part = 'leg'; }
+  if (t >= 0 && t < hit.t) {
+    hit.t = t; hit.kind = 'ent'; hit.ent = ent; hit.part = part; hit.normal = null; hit.mat = null;
+  }
+}
+
+/** a から b までの間に壁があるか */
+export function blocked(boxes, a, b) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const len = Math.hypot(d[0], d[1], d[2]);
+  if (len < 1e-6) return false;
+  d[0] /= len; d[1] /= len; d[2] /= len;
+  for (let i = 0; i < boxes.length; i++) {
+    const t = rayBox(a, d, boxes[i].min, boxes[i].max, len);
+    if (t >= 0 && _axis >= 0) return true;
+  }
+  return false;
+}
+
+const _rw = { x: 0, y: 0, z: 0, crouch: 0 };
+
+/**
+ * 壁・的・敵プレイヤーに対する最も近い命中を返す
+ * shooter を渡すと、本人と味方を除外し、敵は shooter.lagComp 秒前の位置で判定する
+ */
+export function raycast(world, o, d, shooter = null, maxDist = MAX_RANGE) {
+  const hit = { t: maxDist, kind: 'none', normal: null, mat: null, ent: null, part: null };
   const boxes = world.boxes;
   for (let i = 0; i < boxes.length; i++) {
     const t = rayBox(o, d, boxes[i].min, boxes[i].max, hit.t);
@@ -69,16 +102,13 @@ export function raycast(world, o, d, maxDist = MAX_RANGE) {
     }
   }
   for (const tg of world.targets) {
-    if (!tg.alive) continue;
-    let t = raySphere(o, d, tg.pos.x, tg.pos.y + HEAD_Y, tg.pos.z, HEAD_R, hit.t);
-    let part = 'head';
-    const tb = rayPart(o, d, tg.pos, BODY, hit.t);
-    if (tb >= 0 && (t < 0 || tb < t)) { t = tb; part = 'body'; }
-    const tl = rayPart(o, d, tg.pos, LEGS, hit.t);
-    if (tl >= 0 && (t < 0 || tl < t)) { t = tl; part = 'leg'; }
-    if (t >= 0 && t < hit.t) {
-      hit.t = t; hit.kind = 'target'; hit.target = tg; hit.part = part; hit.normal = null; hit.mat = null;
-    }
+    if (tg.alive) rayBody(o, d, tg, tg.pos, 0, hit);
+  }
+  for (const pl of world.players.values()) {
+    if (pl === shooter || !pl.alive) continue;
+    if (shooter && shooter.team && pl.team === shooter.team) continue; // フレンドリーファイアなし
+    world.rewound(pl, shooter ? shooter.lagComp : 0, _rw);
+    rayBody(o, d, pl, _rw, _rw.crouch, hit);
   }
   return hit;
 }
@@ -128,18 +158,19 @@ function fireShot(world, p, w, forcedSpread) {
     const a = world.rng() * Math.PI * 2, m = spread * Math.sqrt(world.rng());
     const y2 = yaw + Math.cos(a) * m, p2 = pitch + Math.sin(a) * m, cp = Math.cos(p2);
     const d = [-Math.sin(y2) * cp, Math.sin(p2), -Math.cos(y2) * cp];
-    const hit = raycast(world, o, d);
+    const hit = raycast(world, o, d, p);
     const point = [o[0] + d[0] * hit.t, o[1] + d[1] * hit.t, o[2] + d[2] * hit.t];
     impacts.push({ point, kind: hit.kind, normal: hit.normal, mat: hit.mat });
-    if (hit.kind === 'target') {
-      const tg = hit.target;
+    if (hit.kind === 'ent') {
+      const ent = hit.ent;
       const damage = damageFor(def, hit.part, hit.t);
-      const killed = applyDamage(tg, damage);
-      world.emit('hit', { playerId: p.id, targetId: tg.id, part: hit.part, damage, killed, point });
+      const killed = applyDamage(ent, damage);
+      world.emit('hit', { playerId: p.id, victimId: ent.id, part: hit.part, damage, killed, point });
       if (killed) {
-        tg.alive = false;
-        tg.respawnAt = world.time + 2.5;
-        world.emit('kill', { playerId: p.id, targetId: tg.id, headshot: hit.part === 'head', weapon: def.id });
+        ent.alive = false;
+        ent.respawnAt = world.time + (ent.isTarget ? KILL_RESPAWN.target : KILL_RESPAWN.player);
+        if (!ent.isTarget) { ent.deaths++; p.kills++; }
+        world.emit('kill', { playerId: p.id, victimId: ent.id, headshot: hit.part === 'head', weapon: def.id });
       }
     }
   }

@@ -39,6 +39,10 @@ function addBox(gb, b, meters) {
   const tu = fit ? [[0, 1], [1, 1], [1, 0], [0, 0]] : [[x0 * s, z1 * s], [x1 * s, z1 * s], [x1 * s, z0 * s], [x0 * s, z0 * s]];
   gb.quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], tu, [1, 1, 1, 1]);
   if (b.kind === 'floor') return;
+  if (y0 > 0.01) { // 宙に浮いた箱 (屋根) は下から見えるので下面も作る
+    const bu = [[x0 * s, z0 * s], [x1 * s, z0 * s], [x1 * s, z1 * s], [x0 * s, z1 * s]];
+    gb.quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], bu, [0.7, 0.7, 0.7, 0.7]);
+  }
 
   // 側面。a → b が面の横方向 (外から見て反時計回りになる順)
   const sides = [

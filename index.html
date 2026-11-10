@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>キュイン・ストライク (仮)</title>
+  <title>KAKUHEN - 確変</title>
   <link rel="stylesheet" href="style.css">
   <script type="importmap">
   {
@@ -13,6 +13,7 @@
     }
   }
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
   <canvas id="view"></canvas>
@@ -20,9 +21,35 @@
   <!-- ゲーム中の表示 -->
   <div id="hud" hidden>
     <div id="edge"></div>
+    <div id="hurt"></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
     <div id="dmg-layer"></div>
+
+    <div id="topleft">
+      <canvas id="minimap"></canvas>
+      <div id="hints">
+        <b>WASD</b> 移動　<b>Shift</b> 歩き　<b>Ctrl</b> しゃがみ　<b>Space</b> ジャンプ<br>
+        <b>左</b> 射撃　<b>右</b> ADS / バースト　<b>R</b> リロード<br>
+        <b>1 / 2</b> 武器　<b>Tab</b> スコア　<b>Esc</b> メニュー
+      </div>
+    </div>
+
+    <div id="scorebar" hidden>
+      <span class="attack"><small>攻撃</small><b id="score-attack">0</b></span>
+      <span class="mode">チームデスマッチ<small>(仮ルール)</small></span>
+      <span class="defense"><b id="score-defense">0</b><small>防衛</small></span>
+    </div>
+
+    <div id="topright">
+      <div id="stats">
+        <div>キル <b id="st-kills">0</b></div>
+        <div>HS 率 <b id="st-hs">-</b></div>
+        <div>命中率 <b id="st-acc">-</b></div>
+        <div class="fps"><b id="st-fps">0</b> fps</div>
+      </div>
+      <div id="killfeed"></div>
+    </div>
 
     <div id="vitals">
       <div class="stat"><span class="label">HP</span><span id="hp">100</span></div>
@@ -33,16 +60,9 @@
       <div id="ammo"><span id="ammo-mag">25</span><span class="sep">/</span><span id="ammo-res">∞</span></div>
       <div id="reload-bar"><div></div></div>
     </div>
-    <div id="stats">
-      <div>キル <b id="st-kills">0</b></div>
-      <div>HS 率 <b id="st-hs">-</b></div>
-      <div>命中率 <b id="st-acc">-</b></div>
-      <div class="fps"><b id="st-fps">0</b> fps</div>
-    </div>
-    <div id="hints">
-      <b>WASD</b> 移動　<b>Shift</b> 歩き　<b>Ctrl</b> しゃがみ　<b>Space</b> ジャンプ<br>
-      <b>左クリック</b> 射撃　<b>右クリック</b> ADS / バースト　<b>R</b> リロード　<b>1 / 2</b> 武器切り替え　<b>Esc</b> メニュー
-    </div>
+
+    <div id="death" hidden><div>やられた</div><small>復活まで <b id="death-sec">3</b></small></div>
+    <div id="scoreboard" hidden></div>
 
     <div id="dopa">
       <div id="dopa-stamp"></div>
@@ -55,12 +75,37 @@
   <!-- タイトル -->
   <div id="title" class="screen">
     <div class="panel">
-      <h1>キュイン・ストライク<small>(仮)</small></h1>
-      <p class="tagline">ガチの撃ち合い × 脳汁演出</p>
+      <h1><span class="logo">KAKUHEN</span><span class="logo-jp">確変</span></h1>
+      <p class="tagline">撃て。当てろ。脳汁を出せ。</p>
       <label>プレイヤー名 <input id="name" maxlength="16" placeholder="なまえ" autocomplete="off"></label>
-      <button id="btn-range" class="primary">射撃場で遊ぶ</button>
-      <button disabled>部屋を作る <small>(Phase 2 で実装)</small></button>
-      <button disabled>コードで参加 <small>(Phase 2 で実装)</small></button>
+      <button id="btn-create" class="primary">部屋を作る</button>
+      <div class="row">
+        <input id="join-code" maxlength="6" placeholder="参加コード" autocomplete="off" spellcheck="false">
+        <button id="btn-join">コードで参加</button>
+      </div>
+      <button id="btn-range">射撃場 (ひとりで練習)</button>
+      <p id="title-msg" class="msg"></p>
+      <div class="settings-slot"></div>
+    </div>
+  </div>
+
+  <!-- ロビー -->
+  <div id="lobby" class="screen" hidden>
+    <div class="panel wide">
+      <div class="lobby-head">
+        <div class="code-box"><small>参加コード (クリックでコピー)</small><button id="lobby-code" class="code"></button></div>
+        <button id="btn-leave">退出</button>
+      </div>
+      <div id="lobby-teams"></div>
+      <p id="lobby-status" class="msg dim"></p>
+      <div class="lobby-actions">
+        <button id="btn-ready" class="primary">準備完了</button>
+        <button id="btn-balance">自動バランス</button>
+        <button id="btn-shuffle">シャッフル</button>
+        <button id="btn-start" class="primary">試合開始</button>
+      </div>
+      <p id="lobby-msg" class="msg"></p>
+      <div class="settings-slot"></div>
     </div>
   </div>
 
@@ -77,18 +122,25 @@
     <div class="panel">
       <h2>クリックで再開</h2>
       <button id="btn-resume" class="primary">ゲームに戻る</button>
-      <label>マウス感度 <output id="sens-out"></output>
-        <input id="sens" type="range" min="0.05" max="2" step="0.01"></label>
-      <label>音量 <output id="vol-out"></output>
-        <input id="vol" type="range" min="0" max="1" step="0.01"></label>
-      <label>演出
-        <select id="fx">
-          <option value="dopamine">ドパミン (全部盛り)</option>
-          <option value="subtle">控えめ</option>
-          <option value="off">OFF</option>
-        </select></label>
+      <div class="settings-slot"></div>
       <button id="btn-fullscreen">フルスクリーン (Ctrl+W でタブが閉じるのを防ぐ)</button>
+      <button id="btn-end">ロビーに戻る</button>
+      <button id="btn-quit">タイトルに戻る</button>
     </div>
+  </div>
+
+  <!-- 設定。開いている画面の .settings-slot へ移して使い回す -->
+  <div id="settings-box" class="settings">
+    <label>マウス感度 <output id="sens-out"></output>
+      <input id="sens" type="range" min="0.05" max="2" step="0.01"></label>
+    <label>音量 <output id="vol-out"></output>
+      <input id="vol" type="range" min="0" max="1" step="0.01"></label>
+    <label>演出
+      <select id="fx">
+        <option value="dopamine">ドパミン (全部盛り)</option>
+        <option value="subtle">控えめ</option>
+        <option value="off">OFF</option>
+      </select></label>
   </div>
 
   <script type="module" src="src/main.js"></script>

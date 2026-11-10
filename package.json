@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "start": "npx --yes serve -l 5173 .",
-    "test": "node test/sim.test.js"
+    "test": "node test/sim.test.js && node test/net.test.js"
   }
 }

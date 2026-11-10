@@ -47,7 +47,7 @@ export class TargetViews {
   update(dt, alpha) {
     for (const v of this.views.values()) {
       const { t, g } = v;
-      g.position.set(lerp(t.prev.x, t.pos.x, alpha), 0, lerp(t.prev.z, t.pos.z, alpha));
+      g.position.set(lerp(t.prev.x, t.pos.x, alpha), t.pos.y, lerp(t.prev.z, t.pos.z, alpha));
       v.flash = Math.max(0, v.flash - dt * 9);
       v.body.emissiveIntensity = v.flash * 0.9;
       if (v.dying > 0) {
