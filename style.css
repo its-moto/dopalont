@@ -119,7 +119,49 @@ button.join { font-size: 13px; padding: 7px; }
 #scorebar small { font-size: 11px; color: var(--dim); }
 #scorebar .mine b { color: var(--ally); }
 #scorebar .theirs b { color: var(--enemy); }
-#scorebar .mode { font-size: 12px; color: var(--dim); display: flex; flex-direction: column; align-items: center; }
+#scorebar .mode { font-size: 11px; color: var(--dim); display: flex; flex-direction: column; align-items: center; min-width: 120px; }
+#scorebar #round-timer { font-size: 30px; color: var(--text); margin: 0; }
+#scorebar #round-timer.alarm { color: #ff5a3c; }
+
+#credits { position: absolute; right: 28px; bottom: 122px; text-align: right; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+#credits small { display: block; font-size: 11px; color: var(--dim); letter-spacing: 0.08em; }
+#credits b { font-size: 26px; color: var(--accent2); }
+#banner { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); text-align: center; opacity: 0; text-shadow: 0 3px 10px #000; white-space: nowrap; }
+#banner.show { opacity: 1; animation: banner 0.35s ease-out; }
+@keyframes banner { 0% { opacity: 0; transform: translateX(-50%) scale(1.5); } 100% { opacity: 1; transform: translateX(-50%) scale(1); } }
+#banner-main { font-family: var(--font-pop); font-size: min(9vw, 64px); line-height: 1.1; }
+#banner-sub { font-size: 18px; color: #dfe4ee; margin-top: 4px; }
+#banner.win #banner-main { color: var(--accent2); text-shadow: 0 0 24px rgba(255, 210, 63, 0.8), 0 3px 0 #000; }
+#banner.lose #banner-main { color: #9aa3b5; }
+#banner.warn #banner-main { color: #ff5a3c; }
+#banner.go #banner-main { color: #5dff9b; }
+#status { position: absolute; left: 50%; bottom: 17%; transform: translateX(-50%); font-size: 16px; text-shadow: 0 1px 4px #000; background: rgba(8, 10, 14, 0.5); border-radius: 6px; padding: 5px 12px; white-space: nowrap; }
+#status:empty { display: none; }
+#progress { position: absolute; left: 50%; bottom: 23%; transform: translateX(-50%); width: min(320px, 70vw); text-align: center; font-size: 14px; text-shadow: 0 1px 4px #000; }
+#progress .bar { margin-top: 6px; height: 10px; background: rgba(0, 0, 0, 0.55); }
+#progress .bar div { transition: none; }
+#scope { position: absolute; inset: 0; background: radial-gradient(circle at 50% 50%, transparent 0, transparent min(34vh, 34vw), #000 min(35vh, 35vw)); }
+#scope i { position: absolute; background: rgba(0, 0, 0, 0.85); }
+#scope i:nth-child(1) { left: 0; right: 0; top: 50%; height: 1px; }
+#scope i:nth-child(2) { top: 0; bottom: 0; left: 50%; width: 1px; }
+label.inline { flex-direction: row; align-items: center; gap: 8px; }
+
+/* ---- 購入メニュー ---- */
+#buy { background: rgba(5, 6, 10, 0.72); z-index: 25; }
+.panel.shop { width: min(1080px, 100%); }
+.shop-head { display: flex; align-items: center; gap: 16px; }
+.shop-head h2 { flex: 1; }
+.shop-credits { color: var(--dim); }
+.shop-credits b { color: var(--accent2); font-size: 24px; margin-left: 6px; }
+#buy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.shop-col { display: flex; flex-direction: column; gap: 6px; }
+.shop-col h3 { font-size: 13px; color: var(--dim); font-weight: 400; }
+button.item { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; padding: 8px 10px; }
+.item .iname { font-weight: 700; font-size: 14px; }
+.item .iprice { color: var(--accent2); font-size: 14px; }
+.item .inote { grid-column: 1 / -1; font-size: 10px; color: var(--dim); }
+.item.poor { opacity: 0.45; }
+.item.owned { border-color: var(--accent2); background: #3a3214; }
 
 #topright { position: absolute; right: 20px; top: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 #stats { text-align: right; font-size: 13px; color: var(--dim); line-height: 1.6; text-shadow: 0 1px 3px #000; }
@@ -154,7 +196,6 @@ button.join { font-size: 13px; padding: 7px; }
 #death { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); text-align: center; text-shadow: 0 3px 10px #000; }
 #death div { font-family: var(--font-pop); font-size: 56px; color: #ff5050; }
 #death small { font-size: 18px; color: var(--text); }
-#death b { font-size: 26px; color: var(--accent2); }
 
 #scoreboard { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, 92vw);
   background: rgba(10, 12, 18, 0.9); border: 1px solid #2b3040; border-radius: 12px; padding: 16px; }

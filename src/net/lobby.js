@@ -3,7 +3,7 @@ import { MAX_TEAM } from './config.js';
 // ロビーの状態と操作。ホストだけが書き換え、全体をクライアントに配る
 
 export function createLobby(code) {
-  return { code, players: [], inGame: false };
+  return { code, players: [], inGame: false, settings: { wins: 13 } };
 }
 
 const count = (lobby, team) => lobby.players.filter((p) => p.team === team).length;

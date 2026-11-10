@@ -4,7 +4,9 @@ import { World, TICK } from '../sim/world.js';
 import { NET } from './config.js';
 import * as L from './lobby.js';
 import { openHost } from './peer.js';
-import { packPlayer, NET_EVENTS } from './protocol.js';
+import { packPlayer, packRound, NET_EVENTS } from './protocol.js';
+import { startRound, joinRound, buy, sell } from '../sim/round.js';
+import { RULES } from '../data/rules.js';
 
 const MAX_PLAYERS = 12; // 5v5 + 観戦 2
 const PITCH_LIMIT = 1.56;
@@ -15,8 +17,8 @@ function cleanCmd(c) {
   return {
     seq: num(c.seq) | 0,
     mx: clamp(num(c.mx), -1, 1), mz: clamp(num(c.mz), -1, 1),
-    jump: !!c.jump, crouch: !!c.crouch, walk: !!c.walk, fire: !!c.fire, alt: !!c.alt, reload: !!c.reload,
-    slot: c.slot === 'primary' || c.slot === 'sidearm' ? c.slot : null,
+    jump: !!c.jump, crouch: !!c.crouch, walk: !!c.walk, fire: !!c.fire, alt: !!c.alt, reload: !!c.reload, use: !!c.use,
+    slot: c.slot === 'primary' || c.slot === 'sidearm' || c.slot === 'melee' ? c.slot : null,
     yaw: num(c.yaw), pitch: clamp(num(c.pitch), -PITCH_LIMIT, PITCH_LIMIT),
   };
 }
@@ -74,6 +76,8 @@ export class HostRoom extends Emitter {
     if (!c) return;
     if (m.t === 'in') this.session?.onInput(c, m.c);
     else if (m.t === 'act') this.apply(id, m.a);
+    else if (m.t === 'buy') this.session?.shop(id, 'buy', m.item);
+    else if (m.t === 'sell') this.session?.shop(id, 'sell', m.slot);
     else if (m.t === 'pong') c.rtt = lerp(c.rtt, (performance.now() - num(m.ts)) / 1000, 0.3);
   }
 
@@ -95,6 +99,7 @@ export class HostRoom extends Emitter {
     if (a.type === 'move') L.setTeam(this.lobby, a.id, a.team);
     else if (a.type === 'balance') L.autoBalance(this.lobby);
     else if (a.type === 'shuffle') L.shuffle(this.lobby);
+    else if (a.type === 'wins' && [13, 7, 5, 3].includes(a.value)) this.lobby.settings.wins = a.value;
     this.lobbyChanged();
   }
 
@@ -151,12 +156,14 @@ export class HostSession {
     this.isHost = true;
     this.room = room;
     this.myId = room.myId;
-    this.world = new World(mapDef, { seed: (Math.random() * 1e9) | 0, targets: false, respawn: true, infiniteReserve: true });
+    this.world = new World(mapDef, { seed: (Math.random() * 1e9) | 0, targets: false, rounds: { winsNeeded: room.lobby.settings?.wins || RULES.winsNeeded } });
+    this.round = this.world.round;
     this.roster = new Map();
     this.events = [];
     this.async = [];  // 更新の合間 (通信の受信時) に起きたイベント
     this.netEv = [];  // 次のスナップショットに載せるイベント
     for (const pl of room.lobby.players) this.addPlayer(pl, true);
+    startRound(this.world);
     this.me = this.world.players.get(this.myId) || null;
     this.remotes = [];
     this.pool = new Map();
@@ -167,10 +174,12 @@ export class HostSession {
   rosterList() { return [...this.roster.values()]; }
 
   addPlayer(pl, initial = false) {
-    const entry = { id: pl.id, name: pl.name, team: pl.team, kills: 0, deaths: 0 };
+    const entry = { id: pl.id, name: pl.name, team: pl.team, kills: 0, deaths: 0, credits: RULES.startCredits };
     this.roster.set(pl.id, entry);
-    if (pl.team !== 'spec') this.world.spawn(this.world.addPlayer(pl.id, { team: pl.team, name: pl.name }));
     if (!initial) this.note({ type: 'join', player: entry });
+    if (pl.team === 'spec') return;
+    const p = this.world.addPlayer(pl.id, { team: pl.team, name: pl.name });
+    if (!initial) joinRound(this.world, p); // 最初からいる人は startRound がまとめて出現させる
   }
 
   removePlayer(id) {
@@ -181,6 +190,17 @@ export class HostSession {
   }
 
   note(e) { this.async.push(e); this.netEv.push(e); }
+
+  /** 自分の買い物 */
+  buy(item) { this.shop(this.myId, 'buy', item); }
+  sell(slot) { this.shop(this.myId, 'sell', slot); }
+
+  shop(id, kind, arg) {
+    const p = this.world.players.get(id);
+    if (!p || typeof arg !== 'string') return;
+    if (kind === 'buy') buy(this.world, p, arg);
+    else sell(this.world, p, arg);
+  }
 
   onInput(c, cmds) {
     if (!Array.isArray(cmds)) return;
@@ -215,6 +235,11 @@ export class HostSession {
           const k = this.roster.get(e.playerId), v = this.roster.get(e.victimId);
           if (k) k.kills++;
           if (v) v.deaths++;
+        } else if (e.type === 'inv') {
+          const r = this.roster.get(e.playerId);
+          if (r) r.credits = e.credits;
+        } else if (e.type === 'roundStart') {
+          for (const id in e.teams) { const r = this.roster.get(id); if (r) r.team = e.teams[id]; }
         }
         this.events.push(e);
         if (NET_EVENTS.has(e.type)) this.netEv.push(e);
@@ -229,7 +254,7 @@ export class HostSession {
   sendSnapshot() {
     const p = [];
     for (const pl of this.world.players.values()) p.push(packPlayer(pl));
-    const msg = { t: 's', k: this.world.tick, p };
+    const msg = { t: 's', k: this.world.tick, p, r: packRound(this.world.round) };
     if (this.netEv.length) { msg.ev = this.netEv; this.netEv = []; }
     this.room.broadcast(msg);
   }
@@ -241,6 +266,7 @@ export class HostSession {
       if (p.id === this.myId) continue;
       let r = this.pool.get(p.id);
       if (!r) this.pool.set(p.id, (r = { id: p.id, name: p.name, team: p.team }));
+      r.team = p.team; r.hp = p.hp;
       r.x = lerp(p.prev.x, p.pos.x, a); r.y = lerp(p.prev.y, p.pos.y, a); r.z = lerp(p.prev.z, p.pos.z, a);
       r.yaw = p.yaw; r.pitch = p.pitch; r.crouch = p.crouch; r.alive = p.alive; r.onGround = p.onGround;
       out.push(r);

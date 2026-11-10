@@ -54,10 +54,11 @@ export function stepMovement(world, p, inp, dt) {
   p.crouch += Math.max(-dt * 8, Math.min(dt * 8, crouchTarget - p.crouch));
   const h = bodyHeight(p);
 
-  // 入力方向 (yaw=0 で -Z を向く)
+  // 入力方向 (yaw=0 で -Z を向く)。設置・解除の最中は動けない
   const sy = Math.sin(p.yaw), cy = Math.cos(p.yaw);
-  let wx = -sy * inp.mz + cy * inp.mx;
-  let wz = -cy * inp.mz - sy * inp.mx;
+  const mx = p.acting ? 0 : inp.mx, mz = p.acting ? 0 : inp.mz;
+  let wx = -sy * mz + cy * mx;
+  let wz = -cy * mz - sy * mx;
   const wl = Math.hypot(wx, wz);
   if (wl > 0) { wx /= wl; wz /= wl; }
 
@@ -72,7 +73,7 @@ export function stepMovement(world, p, inp, dt) {
     else { p.vel.x += (dx / dl) * accel; p.vel.z += (dz / dl) * accel; }
   }
 
-  if (inp.jump && p.onGround) {
+  if (inp.jump && p.onGround && !p.acting) {
     p.vel.y = JUMP_V;
     p.onGround = false;
     world.emit('jump', { playerId: p.id });
@@ -81,6 +82,15 @@ export function stepMovement(world, p, inp, dt) {
 
   moveAxis(boxes, p, 'x', p.vel.x * dt, h);
   moveAxis(boxes, p, 'z', p.vel.z * dt, h);
+
+  // 購入フェーズ中は、スポーンのまわり (見えない壁の内側) から出られない
+  const zone = world.round && world.round.phase === 'buy' && world.map.def.buyZones ? world.map.def.buyZones[p.team] : null;
+  if (zone) {
+    if (p.pos.x < zone[0] + HALF) { p.pos.x = zone[0] + HALF; p.vel.x = 0; }
+    else if (p.pos.x > zone[2] - HALF) { p.pos.x = zone[2] - HALF; p.vel.x = 0; }
+    if (p.pos.z < zone[1] + HALF) { p.pos.z = zone[1] + HALF; p.vel.z = 0; }
+    else if (p.pos.z > zone[3] - HALF) { p.pos.z = zone[3] - HALF; p.vel.z = 0; }
+  }
 
   // 垂直
   const wasGround = p.onGround, vy = p.vel.y;

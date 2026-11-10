@@ -3,6 +3,7 @@ import { TEAM_LABEL } from '../net/config.js';
 
 const $ = (id) => document.getElementById(id);
 const _v = new THREE.Vector3();
+const PHASE_LABEL = { buy: '購入フェーズ', live: '戦闘中', planted: 'スパイク設置中', end: 'ラウンド終了', over: '試合終了' };
 
 /** CSS アニメーションを最初からやり直す */
 export function retrigger(el, ...classes) {
@@ -27,10 +28,14 @@ export class Hud {
       hit: $('hitmarker'), dmg: $('dmg-layer'), crosshair: $('crosshair'), hurt: $('hurt'),
       kills: $('st-kills'), hs: $('st-hs'), acc: $('st-acc'), fps: $('st-fps'),
       scorebar: $('scorebar'), sa: $('score-attack'), sd: $('score-defense'),
-      feed: $('killfeed'), death: $('death'), deathSec: $('death-sec'), board: $('scoreboard'),
+      feed: $('killfeed'), death: $('death'), deathSub: $('death-sub'), board: $('scoreboard'),
+      timer: $('round-timer'), label: $('round-label'), credits: $('credits'), creditsVal: $('credits-val'),
+      status: $('status'), progress: $('progress'), progressLabel: $('progress-label'), progressFill: $('progress-fill'),
+      banner: $('banner'), bannerMain: $('banner-main'), bannerSub: $('banner-sub'), scope: $('scope'),
     };
     this.cache = {};
     this.fpsT = 0; this.fpsN = 0; this.boardT = 0;
+    this.bannerTimer = 0;
   }
 
   show(on) { this.root.hidden = !on; }
@@ -41,6 +46,12 @@ export class Hud {
     this.el.feed.replaceChildren();
     this.el.death.hidden = true;
     this.el.board.hidden = true;
+    this.el.credits.hidden = true;
+    this.el.progress.hidden = true;
+    this.el.scope.hidden = true;
+    this.el.status.textContent = '';
+    if (!this.keepBanner) this.banner('', '', '', 0.01);
+    this.keepBanner = false;
     this.cache = {};
     if (net) {
       // 自分のチームは青、相手は赤で表示する
@@ -65,9 +76,9 @@ export class Hud {
       e.hp.classList.toggle('low', p.hp <= 30);
       this.set('armor', e.armor, p.armor);
       this.set('name', e.name, w.def.name);
-      this.set('mag', e.mag, w.ammo);
-      this.set('res', e.res, world.infiniteReserve ? '∞' : w.reserve);
-      e.ammo.classList.toggle('low', w.ammo <= Math.ceil(w.def.magSize * 0.25));
+      this.set('mag', e.mag, w.def.melee ? '-' : w.ammo);
+      this.set('res', e.res, w.def.melee ? '' : world.infiniteReserve ? '∞' : w.reserve);
+      e.ammo.classList.toggle('low', !w.def.melee && w.ammo <= Math.ceil(w.def.magSize * 0.25));
       const reloading = w.reloadEnd > 0;
       e.reload.classList.toggle('on', reloading);
       if (reloading) e.reloadFill.style.width = `${(1 - (w.reloadEnd - world.time) / w.def.reloadTime) * 100}%`;
@@ -75,15 +86,50 @@ export class Hud {
     }
     this.set('kills', e.kills, stats.kills);
     this.set('hs', e.hs, stats.kills ? `${Math.round((stats.hs / stats.kills) * 100)}%` : '-');
-    this.set('acc', e.acc, stats.shots ? `${Math.round((stats.hits / stats.shots) * 100)}%` : '-');
+    this.set('acc', e.acc, stats.shots ? `${Math.min(100, Math.round((stats.hits / stats.shots) * 100))}%` : '-');
     this.fpsT += dt; this.fpsN++;
     if (this.fpsT >= 0.5) { this.set('fps', e.fps, Math.round(this.fpsN / this.fpsT)); this.fpsT = 0; this.fpsN = 0; }
   }
 
-  score(attack, defense) {
-    this.set('sa', this.el.sa, attack);
-    this.set('sd', this.el.sd, defense);
+  /** 上のバー: スコア、残り時間、ラウンドの状況 */
+  round(r, aliveA, aliveD) {
+    const e = this.el, t = Math.max(0, Math.ceil(r.timer));
+    this.set('sa', e.sa, r.score.attack);
+    this.set('sd', e.sd, r.score.defense);
+    this.set('timer', e.timer, r.phase === 'over' ? '--:--' : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`);
+    e.timer.classList.toggle('alarm', r.phase === 'planted' || (r.phase === 'live' && t <= 10));
+    this.set('label', e.label, `ラウンド ${r.number}${r.overtime ? ' (延長)' : ''}・${PHASE_LABEL[r.phase]}・生存 ${aliveA} 対 ${aliveD}・${r.winsNeeded} 本先取`);
   }
+
+  credits(n) {
+    this.el.credits.hidden = n == null;
+    if (n != null) this.set('credits', this.el.creditsVal, n);
+  }
+
+  /** 画面下の案内 (今できること) */
+  status(text) { this.set('status', this.el.status, text); }
+
+  /** 設置・解除の進み具合。frac が null なら隠す */
+  progress(label, frac) {
+    const e = this.el;
+    e.progress.hidden = frac == null;
+    if (frac == null) return;
+    this.set('progressLabel', e.progressLabel, label);
+    e.progressFill.style.width = `${Math.min(1, frac) * 100}%`;
+  }
+
+  /** 中央上の大きな知らせ。secs が 0 なら出しっぱなし */
+  banner(main, sub, cls, secs) {
+    const e = this.el;
+    clearTimeout(this.bannerTimer);
+    e.bannerMain.textContent = main;
+    e.bannerSub.textContent = sub;
+    e.banner.className = cls || '';
+    retrigger(e.banner, 'show');
+    if (secs > 0) this.bannerTimer = setTimeout(() => e.banner.classList.remove('show'), secs * 1000);
+  }
+
+  scope(on) { this.el.scope.hidden = !on; }
 
   hitmarker(part, killed) {
     retrigger(this.el.hit, 'show', ...(killed ? ['kill'] : part === 'head' ? ['head'] : []));
@@ -91,9 +137,9 @@ export class Hud {
 
   hurt() { retrigger(this.el.hurt, 'show'); }
 
-  death(show, secs) {
+  death(show, sub) {
     this.el.death.hidden = !show;
-    if (show) this.set('deathSec', this.el.deathSec, Math.max(0, Math.ceil(secs)));
+    if (show) this.set('deathSub', this.el.deathSub, sub);
   }
 
   /** 命中した場所にダメージ数値を浮かべる */

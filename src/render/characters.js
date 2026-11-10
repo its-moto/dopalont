@@ -66,8 +66,14 @@ export class PlayerViews {
 
   onHit(id) { const v = this.views.get(id); if (v) v.flash = 1; }
 
-  /** 表示用の状態 (session.remotes) に合わせて作成・更新・削除する */
-  sync(remotes, myTeam, dt) {
+  /** 全員を作り直す (攻守交代で味方と敵の色が変わる時) */
+  clear() {
+    for (const v of this.views.values()) { this.scene.remove(v.g); for (const m of v.materials) m.dispose(); }
+    this.views.clear();
+  }
+
+  /** 表示用の状態 (session.remotes) に合わせて作成・更新・削除する。hideId: その人の視点で観戦中なので描かない */
+  sync(remotes, myTeam, dt, hideId = null) {
     for (const v of this.views.values()) v.seen = false;
     for (const r of remotes) {
       let v = this.views.get(r.id);
@@ -79,7 +85,7 @@ export class PlayerViews {
       v.seen = true;
       // 出現と消滅は一瞬で伸び縮みさせる
       v.shown += ((r.alive ? 1 : 0) - v.shown) * (1 - Math.exp(-dt * 22));
-      v.g.visible = v.shown > 0.03;
+      v.g.visible = v.shown > 0.03 && r.id !== hideId;
       if (!v.g.visible) continue;
       v.g.position.set(r.x, r.y, r.z);
       v.g.rotation.y = r.yaw;

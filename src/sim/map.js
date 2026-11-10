@@ -5,6 +5,15 @@ const MAX_WALL = 12;     // 建物 1 棟の最大サイズ (m)。細かく分け
 const ROOF_CLEAR = 3.4;  // 屋根つきエリアの天井の高さ (床から)
 const SOLID = -1;
 
+function inPoly(poly, x, z) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i], [xj, zj] = poly[j];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** 同じ値が並ぶマスをまとめて、箱の数を減らす */
 function merge(grid, cols, rows, keyOf, max, emit) {
   const used = new Uint8Array(cols * rows);
@@ -32,7 +41,8 @@ function merge(grid, cols, rows, keyOf, max, emit) {
  * マップ定義から、衝突と描画の両方で使う箱のリストを作る
  *
  * 定義は「全部が建物で埋まった土地から、歩けるエリアをくり抜く」形で書く (1 マス = 1m)
- *   areas:  { name, x0, z0, x1, z1, h?, roof?, site?, spawn? }  h は床の高さ。後に書いたものが上書きする
+ *   areas:  { name, x0, z0, x1, z1, h?, roof?, site?, spawn?, poly? }  h は床の高さ。後に書いたものが上書きする
+ *           poly: [[x,z],...] を渡すと、その多角形の形にくり抜く (斜めの通路。壁は 1m 刻みのギザギザになる)
  *   ramps:  { x0, z0, x1, z1, up, from, to }  up ('+x' '-x' '+z' '-z') の向きに from → to へ上る坂 (0.4m ずつの段)
  *   solids: { x0, z0, x1, z1 }  くり抜いた中に残す柱や建物
  *   props:  遮蔽物の箱
@@ -44,7 +54,11 @@ export function buildMap(def) {
   const cols = bx1 - bx0, rows = bz1 - bz0;
   const H = new Float32Array(cols * rows).fill(SOLID);
   const set = (x, z, h) => { if (x >= bx0 && x < bx1 && z >= bz0 && z < bz1) H[(z - bz0) * cols + (x - bx0)] = h; };
-  const fill = (a, h) => { for (let z = a.z0; z < a.z1; z++) for (let x = a.x0; x < a.x1; x++) set(x, z, h); };
+  const fill = (a, h) => {
+    for (let z = a.z0; z < a.z1; z++) for (let x = a.x0; x < a.x1; x++) {
+      if (!a.poly || inPoly(a.poly, x + 0.5, z + 0.5)) set(x, z, h);
+    }
+  };
 
   for (const a of def.areas) fill(a, a.h || 0);
   for (const r of def.ramps || []) {
@@ -103,7 +117,7 @@ export function buildMap(def) {
 export function areaAt(map, x, z) {
   for (let i = map.areas.length - 1; i >= 0; i--) {
     const a = map.areas[i];
-    if (x >= a.x0 && x < a.x1 && z >= a.z0 && z < a.z1) return a.name;
+    if (x >= a.x0 && x < a.x1 && z >= a.z0 && z < a.z1 && (!a.poly || inPoly(a.poly, x, z))) return a.name;
   }
   return '';
 }

@@ -1,21 +1,24 @@
 import { mulberry32 } from '../core/math.js';
+import { RULES } from '../data/rules.js';
 import { buildMap } from './map.js';
 import { stepMovement } from './movement.js';
 import { stepCombat, createLoadout } from './combat.js';
+import { initRounds, stepRound, onLeave } from './round.js';
 
 export const TICK = 1 / 64;
-export const RESPAWN_TIME = 3;       // Phase 2 の仮ルール (チームデスマッチ)。Phase 3 でラウンド制に置き換える
+export const RESPAWN_TIME = 3;       // respawn オプション (ラウンドなしの復活あり) 用
 const HIST = 64;                     // ラグ補償用に過去 1 秒ぶんの位置を持つ
 const HIST_STRIDE = 5;               // time, x, y, z, crouch
-const DEFAULT_LOADOUT = { primary: 'ar_tap', sidearm: 'pistol_basic' };
+const RANGE_LOADOUT = { primary: 'ar_tap', sidearm: 'pistol_basic', melee: 'knife' };
+const ROUND_LOADOUT = { sidearm: 'pistol_basic', melee: 'knife' };
 
-const NEUTRAL = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, slot: null, yaw: 0, pitch: 0, seq: 0 };
+const NEUTRAL = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, slot: null, yaw: 0, pitch: 0, seq: 0 };
 
 /** ゲームの状態全体。描画・音・DOM に依存しない (Node でも動く) */
 export class World {
   /**
-   * @param opts {{seed?:number, infiniteReserve?:boolean, targets?:boolean, respawn?:boolean}}
-   *   targets: 射撃場の的を置くか。respawn: 死んだプレイヤーを自動で復活させるか
+   * @param opts {{seed?:number, infiniteReserve?:boolean, targets?:boolean, respawn?:boolean, rounds?:{winsNeeded?:number}}}
+   *   targets: 射撃場の的を置くか。respawn: 死んだら自動で復活するか。rounds: ラウンド制にするか
    */
   constructor(mapDef, opts = {}) {
     this.map = buildMap(mapDef);
@@ -26,6 +29,8 @@ export class World {
     this.infiniteReserve = !!opts.infiniteReserve;
     this.respawn = !!opts.respawn;
     this.muted = false; // true の間はイベントを出さない (クライアントの再計算用)
+    this.round = null;
+    this.roundAuth = !!opts.rounds; // ラウンドを進めるのはホストの sim だけ (参加側は届いた状態を写すだけ)
     this.players = new Map();
     this.targets = opts.targets === false ? [] : (mapDef.targets || []).map((t, i) => ({
       id: 't' + i, isTarget: true,
@@ -39,17 +44,20 @@ export class World {
       alive: true, respawnAt: 0,
     }));
     this.events = [];
+    if (opts.rounds) initRounds(this, opts.rounds);
   }
 
-  addPlayer(id, { x = 0, z = 0, yaw = 0, team = null, name = '', loadout = DEFAULT_LOADOUT } = {}) {
+  addPlayer(id, { x = 0, z = 0, yaw = 0, team = null, name = '', loadout } = {}) {
+    const ids = { ...(loadout || (this.round ? ROUND_LOADOUT : RANGE_LOADOUT)) };
     const p = {
       id, name, team,
       pos: { x, y: 0, z }, prev: { x, y: 0, z },
       vel: { x: 0, y: 0, z: 0 },
       yaw, pitch: 0, crouch: 0, onGround: false, groundMat: 'sand', stepDist: 0, moveMul: 1,
       hp: 100, armor: 0, alive: true, respawnAt: 0, kills: 0, deaths: 0,
-      weapons: createLoadout(loadout), loadout,
-      slot: 'primary', equipUntil: 0,
+      credits: RULES.startCredits, bought: {}, acting: null, fresh: false,
+      weapons: createLoadout(ids), loadout: ids,
+      slot: ids.primary ? 'primary' : 'sidearm', equipUntil: 0,
       recoil: { yaw: 0, pitch: 0 }, sprayIndex: 0, lastShotTime: -10,
       ads: false, prevFire: false, prevAlt: false, fireBuffer: 0,
       lastCmd: { ...NEUTRAL, yaw }, ack: 0,
@@ -59,22 +67,30 @@ export class World {
     return p;
   }
 
-  removePlayer(id) { this.players.delete(id); }
+  removePlayer(id) {
+    const p = this.players.get(id);
+    if (!p) return;
+    onLeave(this, p);
+    this.players.delete(id);
+  }
 
-  /** チームのスポーン地点に (再) 出現させる */
-  spawn(p) {
+  /** チームのスポーン地点に出現させる。武器は p.loadout から作り直す (弾は満タン)。point を渡すとその地点に出す */
+  spawn(p, point = null) {
     const pts = this.map.spawns[p.team] || this.map.spawns.attack;
-    const s = pts[Math.floor(this.rng() * pts.length)];
-    p.pos.x = s.x + (this.rng() - 0.5) * 2; p.pos.y = 0; p.pos.z = s.z + (this.rng() - 0.5) * 2;
+    const s = point || pts[Math.floor(this.rng() * pts.length)];
+    const j = point ? 0 : 2;
+    p.pos.x = s.x + (this.rng() - 0.5) * j; p.pos.y = 0; p.pos.z = s.z + (this.rng() - 0.5) * j;
     p.prev.x = p.pos.x; p.prev.y = 0; p.prev.z = p.pos.z;
     p.vel.x = p.vel.y = p.vel.z = 0;
     p.yaw = p.team === 'defense' ? Math.PI : 0;
     p.pitch = 0; p.crouch = 0;
-    p.hp = 100; p.armor = 0; p.alive = true;
+    p.hp = 100; p.alive = true; p.acting = null;
     p.weapons = createLoadout(p.loadout);
-    p.slot = 'primary'; p.equipUntil = 0; p.sprayIndex = 0;
+    p.slot = p.loadout.primary ? 'primary' : 'sidearm';
+    p.equipUntil = 0; p.sprayIndex = 0;
     p.recoil.yaw = p.recoil.pitch = 0;
-    p.lastCmd.yaw = p.yaw; p.lastCmd.pitch = 0;
+    Object.assign(p.lastCmd, NEUTRAL);
+    p.lastCmd.yaw = p.yaw;
     p.histN = 0;
     this.emit('respawn', { playerId: p.id, x: p.pos.x, z: p.pos.z, yaw: p.yaw });
   }
@@ -132,7 +148,7 @@ export class World {
     this.tick++;
     for (const p of this.players.values()) {
       if (!p.alive) {
-        if (this.respawn && this.time >= p.respawnAt) this.spawn(p);
+        if (this.respawn && this.time >= p.respawnAt) { p.armor = 0; this.spawn(p); }
         continue;
       }
       const list = cmds[p.id];
@@ -155,6 +171,8 @@ export class World {
       const i = (p.histN++ % HIST) * HIST_STRIDE, h = p.hist;
       h[i] = this.time; h[i + 1] = p.pos.x; h[i + 2] = p.pos.y; h[i + 3] = p.pos.z; h[i + 4] = p.crouch;
     }
+    if (this.roundAuth) stepRound(this, dt);
+
     for (const t of this.targets) {
       if (!t.alive) {
         if (this.time >= t.respawnAt) {

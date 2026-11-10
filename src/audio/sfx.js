@@ -17,6 +17,33 @@ const GUNS = {
   },
 };
 
+Object.assign(GUNS, {
+  smg: {
+    crack: { f: 3200, dur: 0.03, gain: 0.6 }, body: { f0: 230, f1: 70, dur: 0.06, gain: 0.7 }, sub: null,
+    mid: { f: 1500, q: 0.9, dur: 0.08, gain: 0.5 }, tail: { f: 1100, f1: 380, dur: 0.22, gain: 0.12 },
+  },
+  shotgun: {
+    crack: { f: 1800, dur: 0.07, gain: 1.0 }, body: { f0: 150, f1: 38, dur: 0.18, gain: 1.0 }, sub: { f0: 80, f1: 32, dur: 0.25, gain: 0.7 },
+    mid: { f: 800, q: 0.5, dur: 0.22, gain: 0.8 }, tail: { f: 700, f1: 180, dur: 0.7, gain: 0.32 },
+  },
+  sniper: {
+    crack: { f: 2200, dur: 0.07, gain: 1.0 }, body: { f0: 170, f1: 36, dur: 0.2, gain: 1.0 }, sub: { f0: 70, f1: 30, dur: 0.3, gain: 0.7 },
+    mid: { f: 1000, q: 0.6, dur: 0.2, gain: 0.7 }, tail: { f: 800, f1: 160, dur: 1.0, gain: 0.36 },
+  },
+  mg: {
+    crack: { f: 2300, dur: 0.05, gain: 0.9 }, body: { f0: 170, f1: 42, dur: 0.13, gain: 1.0 }, sub: { f0: 85, f1: 36, dur: 0.18, gain: 0.6 },
+    mid: { f: 950, q: 0.7, dur: 0.17, gain: 0.65 }, tail: { f: 800, f1: 220, dur: 0.5, gain: 0.26 },
+  },
+  heavyPistol: {
+    crack: { f: 2800, dur: 0.05, gain: 0.85 }, body: { f0: 210, f1: 50, dur: 0.13, gain: 0.95 }, sub: { f0: 90, f1: 40, dur: 0.16, gain: 0.4 },
+    mid: { f: 1300, q: 0.8, dur: 0.14, gain: 0.6 }, tail: { f: 1000, f1: 260, dur: 0.5, gain: 0.24 },
+  },
+  silenced: {
+    crack: { f: 4200, dur: 0.02, gain: 0.25 }, body: { f0: 320, f1: 140, dur: 0.05, gain: 0.35 }, sub: null,
+    mid: { f: 2400, q: 1.4, dur: 0.06, gain: 0.3 }, tail: { f: 1600, f1: 700, dur: 0.1, gain: 0.04 },
+  },
+});
+
 const STEPS = {
   sand: { f: 650, q: 0.6, dur: 0.1, gain: 0.22 },
   concrete: { f: 1700, q: 1.2, dur: 0.055, gain: 0.2 },
@@ -45,6 +72,11 @@ export class Sfx {
     if (!this.ok) return;
     const e = this.e, t = e.now, r = GUNS[kind];
     const pv = 0.96 + Math.random() * 0.08; // 毎発わずかに変えて機械的に聞こえないように
+    if (kind === 'knife') { // 空を切る音
+      const d = at ? e.spatial(at, e.buses.weapon, 3) : e.buses.weapon;
+      e.noise({ t, f: 900, f1: 3200, q: 1.2, dur: 0.16, gain: 0.28, attack: 0.03, dest: d });
+      return;
+    }
     const dest = at ? e.spatial(at, e.gunIn, 9) : e.gunIn;
     e.noise({ t, type: 'highpass', f: r.crack.f * pv, dur: r.crack.dur, gain: r.crack.gain, dest });
     e.tone({ t, f0: r.body.f0 * pv, f1: r.body.f1, dur: r.body.dur, gain: r.body.gain, dest });
@@ -136,6 +168,75 @@ export class Sfx {
     const e = this.e, t = e.now, s = STEPS[mat] || STEPS.concrete;
     e.tone({ t, f0: 130, f1: 42, dur: 0.14, gain: 0.5, dest: e.buses.step });
     e.noise({ t, f: s.f * 0.7, q: 0.8, dur: 0.11, gain: 0.3, dest: e.buses.step });
+  }
+
+  // ---- ラウンドとスパイク ----
+  /** 設置されたスパイクの警告音 (位置つき)。爆発が近いほど高く鳴る */
+  spikeBeep(at, urgent) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 12);
+    const f = urgent ? 1480 : 1100;
+    e.tone({ t, type: 'square', f0: f, dur: 0.09, gain: 0.3, dest });
+    e.tone({ t, f0: f * 2, dur: 0.06, gain: 0.15, dest });
+  }
+
+  /** 設置・解除の作業音 */
+  spikeWork(at, defuse) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 8);
+    e.tone({ t, type: 'triangle', f0: defuse ? 620 : 420, f1: defuse ? 760 : 520, dur: 0.12, gain: 0.25, dest });
+    e.noise({ t, f: 3000, q: 3, dur: 0.03, gain: 0.15, dest });
+  }
+
+  planted() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    for (let i = 0; i < 3; i++) e.tone({ t: t + i * 0.16, type: 'square', f0: 660, f1: 880, dur: 0.14, gain: 0.16, dest: e.uiIn });
+  }
+
+  explosion(at) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now, dest = e.spatial(at, e.gunIn, 30);
+    e.tone({ t, f0: 120, f1: 24, dur: 1.4, gain: 1.0, dest });
+    e.tone({ t, type: 'triangle', f0: 60, f1: 20, dur: 1.8, gain: 0.8, dest });
+    e.noise({ t, type: 'lowpass', f: 2400, f1: 120, dur: 2.2, gain: 0.9, attack: 0.01, dest });
+    e.noise({ t, type: 'highpass', f: 1800, dur: 0.25, gain: 0.7, dest });
+  }
+
+  /** 戦闘開始の合図 */
+  roundGo() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, type: 'sawtooth', f0: 220, f1: 440, dur: 0.5, hold: 0.3, gain: 0.12, dest: e.uiIn });
+    e.tone({ t, type: 'square', f0: 330, f1: 660, dur: 0.5, hold: 0.3, gain: 0.07, dest: e.uiIn });
+  }
+
+  roundWin() {
+    if (!this.ok) return;
+    const t = this.e.now + 0.05;
+    this.arp(t, [523, 659, 784, 1047], 0.09, 0.15);
+    for (let i = 0; i < 6; i++) this.coin(t + 0.45 + i * 0.08, 0.07);
+    this.sparkle(t + 0.4, 6, 0.06);
+  }
+
+  roundLose() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now + 0.05;
+    [392, 330, 262].forEach((f, i) => e.tone({ t: t + i * 0.18, type: 'square', f0: f, f1: f * 0.94, dur: 0.3, gain: 0.1, dest: e.uiIn }));
+  }
+
+  buy(price) {
+    if (!this.ok) return;
+    const t = this.e.now;
+    this.coin(t, 0.1);
+    if (price >= 2000) { this.coin(t + 0.09, 0.1); this.sparkle(t + 0.1, 3, 0.05); } // 高い買い物ほど豪華に
+    if (price >= 4000) this.kyuin(t + 0.12, 1.3, 0.14);
+  }
+
+  deny() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, type: 'square', f0: 180, f1: 140, dur: 0.14, gain: 0.12, dest: e.uiIn });
   }
 
   /** 自分が撃たれた */

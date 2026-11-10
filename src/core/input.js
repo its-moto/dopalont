@@ -1,7 +1,7 @@
 import { DEG, clamp } from './math.js';
 
 const MAX_PITCH = 89 * DEG;
-const SLOT_KEYS = { Digit1: 'primary', Digit2: 'sidearm' };
+const SLOT_KEYS = { Digit1: 'primary', Digit2: 'sidearm', Digit3: 'melee' };
 
 /** キーボードとマウス。Pointer Lock 中だけ入力を受け付ける */
 export class Input {
@@ -62,6 +62,7 @@ export class Input {
       fire: (this.buttons & 1) !== 0,
       alt: (this.buttons & 4) !== 0,
       reload: this.edges.has('KeyR'),
+      use: k.has('KeyF'),
       slot,
       yaw: this.yaw,
       pitch: this.pitch,

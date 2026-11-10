@@ -1,9 +1,10 @@
 import { DEG, clamp, lerp } from '../core/math.js';
 import { WEAPONS } from '../data/weapons.js';
+import { RULES, PENETRATION } from '../data/rules.js';
 import { RUN_SPEED, eyeHeight } from './movement.js';
+import { onKill } from './round.js';
 
 const MAX_RANGE = 400;
-const ARMOR_ABSORB = 0.66; // DESIGN.md §4.4
 const FIRE_BUFFER = 0.08;  // セミオートの先行入力を受け付ける時間
 
 // ヒットボックス (足元基準)。頭は球、胴と脚は箱。しゃがむと全体が低くなる
@@ -16,15 +17,16 @@ export function createLoadout(ids) {
   const out = {};
   for (const slot in ids) {
     const def = WEAPONS[ids[slot]];
+    if (!def) continue;
     out[slot] = { def, ammo: def.magSize, reserve: def.reserveAmmo, nextFire: 0, reloadEnd: 0, burstLeft: 0, burstNext: 0 };
   }
   return out;
 }
 
 // ---- レイキャスト ----
-let _axis = -1;
+let _axis = -1, _exit = 0;
 function rayBox(o, d, min, max, tMax) {
-  let t0 = 0, t1 = tMax;
+  let t0 = 0, t1 = Infinity;
   _axis = -1;
   for (let i = 0; i < 3; i++) {
     if (Math.abs(d[i]) < 1e-9) {
@@ -37,6 +39,8 @@ function rayBox(o, d, min, max, tMax) {
       if (t0 > t1) return -1;
     }
   }
+  if (t0 > tMax) return -1;
+  _exit = t1;
   return t0;
 }
 
@@ -89,17 +93,18 @@ const _rw = { x: 0, y: 0, z: 0, crouch: 0 };
 /**
  * 壁・的・敵プレイヤーに対する最も近い命中を返す
  * shooter を渡すと、本人と味方を除外し、敵は shooter.lagComp 秒前の位置で判定する
+ * 壁に当たった場合、exit はその壁を抜けるまでの距離 (壁抜きの判定に使う)
  */
 export function raycast(world, o, d, shooter = null, maxDist = MAX_RANGE) {
-  const hit = { t: maxDist, kind: 'none', normal: null, mat: null, ent: null, part: null };
+  const hit = { t: maxDist, kind: 'none', normal: null, mat: null, ent: null, part: null, exit: 0 };
   const boxes = world.boxes;
   for (let i = 0; i < boxes.length; i++) {
     const t = rayBox(o, d, boxes[i].min, boxes[i].max, hit.t);
-    if (t >= 0 && t < hit.t && _axis >= 0) {
-      hit.t = t; hit.kind = 'wall'; hit.mat = boxes[i].mat;
-      hit.normal = [0, 0, 0];
-      hit.normal[_axis] = d[_axis] > 0 ? -1 : 1;
-    }
+    if (t < 0 || t >= hit.t) continue;
+    hit.t = t; hit.kind = 'wall'; hit.mat = boxes[i].mat; hit.exit = _exit;
+    hit.normal = [0, 0, 0];
+    if (_axis >= 0) hit.normal[_axis] = d[_axis] > 0 ? -1 : 1;
+    else hit.normal[1] = 1; // 始点が箱の中 (壁抜きの 2 本目のレイ): 抜けられない壁として扱う
   }
   for (const tg of world.targets) {
     if (tg.alive) rayBody(o, d, tg, tg.pos, 0, hit);
@@ -121,7 +126,7 @@ export function damageFor(def, part, dist) {
 
 /** アーマーが 66% を肩代わりする。死んだら true */
 export function applyDamage(ent, dmg) {
-  const absorbed = Math.min(ent.armor, Math.floor(dmg * ARMOR_ABSORB));
+  const absorbed = Math.min(ent.armor, Math.floor(dmg * RULES.armorAbsorb));
   ent.armor -= absorbed;
   ent.hp -= dmg - absorbed;
   return ent.hp <= 0;
@@ -130,11 +135,12 @@ export function applyDamage(ent, dmg) {
 // ---- 拡散 ----
 function computeSpread(p, def, idx) {
   const s = def.spread;
+  const scoped = !def.ads || !def.ads.scope || p.ads;
   let v;
   if (!p.onGround) {
     v = s.air;
   } else {
-    const r = Math.hypot(p.vel.x, p.vel.z) / RUN_SPEED;
+    const r = Math.hypot(p.vel.x, p.vel.z) / (RUN_SPEED * def.moveSpeedMul);
     const still = idx === 0 ? s.first : Math.min(s.max, s.stand + s.perShot * idx);
     const walk = Math.max(still, s.walk), run = Math.max(still, s.run);
     if (r < 0.25) v = still;
@@ -142,6 +148,7 @@ function computeSpread(p, def, idx) {
     else v = lerp(walk, run, clamp((r - 0.56) / 0.44, 0, 1));
     if (p.crouch > 0.5) v *= s.crouchMul;
   }
+  if (!scoped) v = Math.max(v, s.hip); // スナイパーは覗かないと当たらない
   if (p.ads) v *= def.ads.spreadMul;
   return v;
 }
@@ -152,30 +159,43 @@ function fireShot(world, p, w, forcedSpread) {
   const yaw = p.yaw + p.recoil.yaw;
   const pitch = clamp(p.pitch + p.recoil.pitch, -1.55, 1.55);
   const o = [p.pos.x, p.pos.y + eyeHeight(p), p.pos.z];
+  const range = def.melee ? def.range : MAX_RANGE;
   const impacts = [];
 
   for (let i = 0; i < def.pellets; i++) {
     const a = world.rng() * Math.PI * 2, m = spread * Math.sqrt(world.rng());
     const y2 = yaw + Math.cos(a) * m, p2 = pitch + Math.sin(a) * m, cp = Math.cos(p2);
     const d = [-Math.sin(y2) * cp, Math.sin(p2), -Math.cos(y2) * cp];
-    const hit = raycast(world, o, d, p);
-    const point = [o[0] + d[0] * hit.t, o[1] + d[1] * hit.t, o[2] + d[2] * hit.t];
-    impacts.push({ point, kind: hit.kind, normal: hit.normal, mat: hit.mat });
+    let hit = raycast(world, o, d, p, range), dist = hit.t, mul = 1;
+    impacts.push({ point: [o[0] + d[0] * dist, o[1] + d[1] * dist, o[2] + d[2] * dist], kind: hit.kind, normal: hit.normal, mat: hit.mat });
+
+    // 壁抜き: 薄い壁なら 1 枚だけ抜けて、威力を落として奥の敵に当たる
+    if (hit.kind === 'wall' && !def.melee) {
+      const pen = PENETRATION[def.penetration];
+      if (hit.exit - hit.t <= pen.thick) {
+        const skip = hit.exit + 0.02;
+        const o2 = [o[0] + d[0] * skip, o[1] + d[1] * skip, o[2] + d[2] * skip];
+        const h2 = raycast(world, o2, d, p, range - skip);
+        if (h2.kind === 'ent') { hit = h2; dist = skip + h2.t; mul = pen.mul; }
+      }
+    }
+
     if (hit.kind === 'ent') {
       const ent = hit.ent;
-      const damage = damageFor(def, hit.part, hit.t);
+      const damage = Math.round(damageFor(def, hit.part, dist) * mul);
       const killed = applyDamage(ent, damage);
-      world.emit('hit', { playerId: p.id, victimId: ent.id, part: hit.part, damage, killed, point });
+      const point = [o[0] + d[0] * dist, o[1] + d[1] * dist, o[2] + d[2] * dist];
+      world.emit('hit', { playerId: p.id, victimId: ent.id, part: hit.part, damage, killed, point, through: mul < 1 });
       if (killed) {
         ent.alive = false;
         ent.respawnAt = world.time + (ent.isTarget ? KILL_RESPAWN.target : KILL_RESPAWN.player);
-        if (!ent.isTarget) { ent.deaths++; p.kills++; }
+        if (!ent.isTarget) { ent.deaths++; p.kills++; onKill(world, p, ent); }
         world.emit('kill', { playerId: p.id, victimId: ent.id, headshot: hit.part === 'head', weapon: def.id });
       }
     }
   }
 
-  w.ammo--;
+  if (!def.melee) w.ammo--;
   p.sprayIndex = idx + 1;
   p.lastShotTime = world.time;
   const pat = def.recoil.pattern;
@@ -186,7 +206,7 @@ function fireShot(world, p, w, forcedSpread) {
 }
 
 function startReload(world, p, w) {
-  if (w.reloadEnd || w.ammo >= w.def.magSize || w.reserve <= 0) return;
+  if (w.def.melee || w.reloadEnd || w.ammo >= w.def.magSize || w.reserve <= 0) return;
   w.reloadEnd = world.time + w.def.reloadTime;
   w.burstLeft = 0;
   world.emit('reloadStart', { playerId: p.id, weapon: w.def.id, dur: w.def.reloadTime });
@@ -197,7 +217,7 @@ export function stepCombat(world, p, inp, dt) {
 
   if (inp.slot && inp.slot !== p.slot && p.weapons[inp.slot]) {
     const old = p.weapons[p.slot];
-    old.reloadEnd = 0; old.burstLeft = 0;
+    if (old) { old.reloadEnd = 0; old.burstLeft = 0; }
     p.slot = inp.slot;
     const nw = p.weapons[p.slot];
     p.equipUntil = t + nw.def.equipTime;
@@ -224,7 +244,8 @@ export function stepCombat(world, p, inp, dt) {
   }
   if (since > rec.resetTime) p.sprayIndex = 0;
 
-  const ready = t >= p.equipUntil && !w.reloadEnd;
+  // 設置・解除の最中は撃てない
+  const ready = t >= p.equipUntil && !w.reloadEnd && !p.acting;
   p.ads = !!(def.ads && inp.alt && ready);
   p.moveMul = def.moveSpeedMul * (p.ads ? def.ads.moveMul : 1);
 
@@ -244,10 +265,12 @@ export function stepCombat(world, p, inp, dt) {
       if (trigger) {
         p.fireBuffer = 0;
         if (w.ammo > 0) {
+          // ヘビー武器は撃ち続けるほど速くなる
+          let rate = def.rampTo ? lerp(def.fireRate, def.rampTo, Math.min(1, p.sprayIndex / def.rampShots)) : def.fireRate;
+          if (p.ads) rate *= def.ads.fireRateMul;
           fireShot(world, p, w, 0);
-          const iv = 1 / (def.fireRate * (p.ads ? def.ads.fireRateMul : 1));
           // tick の端数を持ち越して、連射速度を正確に保つ
-          w.nextFire = t - w.nextFire < dt ? w.nextFire + iv : t + iv;
+          w.nextFire = t - w.nextFire < dt ? w.nextFire + 1 / rate : t + 1 / rate;
         } else {
           if (fireEdge) world.emit('dry', { playerId: p.id });
           startReload(world, p, w);

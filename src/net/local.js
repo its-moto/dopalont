@@ -1,4 +1,7 @@
 import { World, TICK } from '../sim/world.js';
+import { setSlot } from '../sim/round.js';
+import { WEAPONS } from '../data/weapons.js';
+import { RULES } from '../data/rules.js';
 
 /**
  * セッション = 「自分から見たゲーム」。Game (描画・音・HUD) はこの形だけを見る
@@ -20,7 +23,17 @@ export class LocalSession {
     this.events = [];
     this.acc = 0; this.alpha = 0; this.stepOff = 0;
     this.viewOffset = { x: 0, y: 0, z: 0 };
+    this.round = null;
   }
+
+  /** 射撃場ではどの武器も無料で試せる */
+  buy(item) {
+    const def = WEAPONS[item], armor = RULES.armor[item];
+    if (armor) this.me.armor = armor.value;
+    else if (def && def.slot !== 'melee') setSlot(this.me, def.slot, item);
+  }
+
+  sell() {}
 
   update(dt, input) {
     const { world, me } = this;

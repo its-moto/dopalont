@@ -60,6 +60,19 @@ function buildPistol() {
     base: new THREE.Vector3(0.12, -0.14, -0.42), ads: new THREE.Vector3(0.12, -0.14, -0.42) };
 }
 
+function buildKnife() {
+  const g = new THREE.Group();
+  const blade = new THREE.MeshStandardMaterial({ color: 0xc9d2dc, roughness: 0.25, metalness: 0.9 });
+  box(g, blade, 0.008, 0.045, 0.24, 0, 0.03, -0.2);
+  box(g, M.accent, 0.012, 0.008, 0.2, 0, 0.012, -0.2);
+  box(g, M.gun, 0.03, 0.02, 0.02, 0, 0.03, -0.07);
+  const mag = box(g, M.gun2, 0.028, 0.035, 0.12, 0, 0.03, 0);
+  box(g, M.glove, 0.06, 0.08, 0.09, 0.004, 0.0, 0.01);
+  box(g, M.sleeve, 0.075, 0.075, 0.34, 0.06, -0.08, 0.2, 0.35, -0.3);
+  return { group: g, mag, magRest: mag.position.clone(), muzzle: new THREE.Vector3(0, 0.03, -0.3),
+    base: new THREE.Vector3(0.16, -0.16, -0.36), ads: new THREE.Vector3(0.16, -0.16, -0.36), melee: true };
+}
+
 export class ViewModel {
   constructor() {
     this.scene = new THREE.Scene();
@@ -71,7 +84,7 @@ export class ViewModel {
 
     this.root = new THREE.Group();
     this.scene.add(this.root);
-    this.models = { rifle: buildRifle(), pistol: buildPistol() };
+    this.models = { rifle: buildRifle(), pistol: buildPistol(), knife: buildKnife() };
     for (const k in this.models) { this.models[k].group.scale.setScalar(MODEL_SCALE); this.models[k].group.visible = false; this.root.add(this.models[k].group); }
 
     const flashTex = canvasTexture(128, (ctx, s) => {
@@ -118,6 +131,7 @@ export class ViewModel {
   }
 
   onShot(def) {
+    if (def.melee) { this.kick -= 0.16; this.kickRot -= 0.5; return; } // 突き出す。火花は出ない
     this.kick += 0.035 * def.kick;
     this.kickRot += 0.05 * def.kick;
     this.flashT = 0.05;

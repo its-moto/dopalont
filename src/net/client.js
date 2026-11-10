@@ -2,9 +2,10 @@ import { Emitter } from '../core/events.js';
 import { World, TICK } from '../sim/world.js';
 import { stepMovement } from '../sim/movement.js';
 import { createLoadout } from '../sim/combat.js';
+import { applyInv } from '../sim/round.js';
 import { NET } from './config.js';
 import { joinHost } from './peer.js';
-import { E, F } from './protocol.js';
+import { E, F, emptyRound, unpackRound } from './protocol.js';
 
 const EMPTY = {};
 const MAX_PENDING = 128;
@@ -79,12 +80,13 @@ export class ClientSession {
     this.isHost = false;
     this.room = room;
     this.myId = room.myId;
-    this.world = new World(mapDef, { targets: false, infiniteReserve: true });
+    this.world = new World(mapDef, { targets: false });
+    this.round = this.world.round = emptyRound(); // ホストから届く状態の写し。購入フェーズの壁の予測にも使う
     this.roster = new Map(startMsg.roster.map((r) => [r.id, r]));
     const mine = this.roster.get(this.myId);
     this.me = null;
     if (mine && mine.team !== 'spec') {
-      this.me = this.world.addPlayer(this.myId, { team: mine.team, name: mine.name });
+      this.me = this.world.addPlayer(this.myId, { team: mine.team, name: mine.name, loadout: { sidearm: 'pistol_basic', melee: 'knife' } });
       this.me.alive = false; // 最初のスナップショットが届くまで待つ
     }
     this.clock = () => performance.now() / 1000; // テストでは差し替える
@@ -130,8 +132,15 @@ export class ClientSession {
     this.buildRemotes();
   }
 
+  buy(item) { this.room.conn.send({ t: 'buy', item }); }
+  sell(slot) { this.room.conn.send({ t: 'sell', slot }); }
+
   onSnapshot(m) {
     const now = this.clock();
+    if (m.r) {
+      unpackRound(m.r, this.round);
+      if (this.me) this.me.acting = this.round.spike.user === this.myId ? 'busy' : null; // 設置・解除中は動けない
+    }
     for (const e of m.p) {
       if (e[E.ID] === this.myId) { this.reconcile(e); continue; }
       let buf = this.buffers.get(e[E.ID]);
@@ -142,7 +151,21 @@ export class ClientSession {
     if (m.ev) {
       for (const ev of m.ev) {
         if (ev.type === 'shot' && ev.playerId === this.myId) continue; // 自分の射撃は予測で表示済み
-        if (ev.type === 'respawn' && ev.playerId === this.myId) continue; // 自分の復活は reconcile が知らせる
+        if (ev.type === 'respawn' && ev.playerId === this.myId && this.me) { // ラウンド開始: 弾を満タンに戻す
+          const me = this.me;
+          me.weapons = createLoadout(me.loadout);
+          me.slot = me.loadout.primary ? 'primary' : 'sidearm';
+          me.equipUntil = 0; me.sprayIndex = 0;
+          me.recoil.yaw = me.recoil.pitch = 0;
+          this.pending.length = 0;
+        } else if (ev.type === 'inv') {
+          const r = this.roster.get(ev.playerId);
+          if (r) r.credits = ev.credits;
+          if (ev.playerId === this.myId && this.me) applyInv(this.me, ev);
+        } else if (ev.type === 'roundStart') {
+          for (const id in ev.teams) { const r = this.roster.get(id); if (r) r.team = ev.teams[id]; }
+          if (this.me && ev.teams[this.myId]) this.me.team = ev.teams[this.myId];
+        }
         if (ev.type === 'kill') {
           const k = this.roster.get(ev.playerId), v = this.roster.get(ev.victimId);
           if (k) k.kills++;
@@ -166,14 +189,9 @@ export class ClientSession {
     if (!alive) { me.alive = false; this.pending.length = 0; return; }
 
     const ox = me.pos.x, oy = me.pos.y, oz = me.pos.z;
-    if (!me.alive) { // 復活した
+    if (!me.alive) { // 復活した (武器と向きは respawn イベントで整える)
       me.alive = true;
-      me.weapons = createLoadout(me.loadout);
-      me.slot = 'primary'; me.equipUntil = 0; me.sprayIndex = 0;
-      me.recoil.yaw = me.recoil.pitch = 0;
       this.pending.length = 0;
-      // 向きをスポーンの向きに合わせてもらう (イベントを取りこぼしても復活できるよう、ここで作る)
-      this.netQueue.push({ type: 'respawn', playerId: this.myId, x: e[E.X], z: e[E.Z], yaw: e[E.YAW] });
     }
     const ack = e[E.ACK];
     let n = 0;
@@ -206,6 +224,7 @@ export class ClientSession {
       if (!info || !buf.length) continue;
       let r = this.pool.get(id);
       if (!r) this.pool.set(id, (r = { id, name: info.name, team: info.team }));
+      r.team = info.team;
       // t を挟む 2 つのスナップショットを探す
       let i = buf.length - 1;
       while (i > 0 && buf[i].t > t) i--;
@@ -222,6 +241,7 @@ export class ClientSession {
       r.crouch = ea[E.CROUCH] + (eb[E.CROUCH] - ea[E.CROUCH]) * f;
       r.alive = f >= 1 ? aliveB : aliveA;
       r.onGround = (eb[E.FLAGS] & F.GROUND) !== 0;
+      r.hp = eb[E.HP];
       out.push(r);
     }
   }

@@ -5,7 +5,7 @@ import { FOUNDRY } from '../src/data/maps/foundry.js';
 import { RUN_SPEED } from '../src/sim/movement.js';
 import { WEAPONS } from '../src/data/weapons.js';
 
-const base = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, slot: null, yaw: 0, pitch: 0 };
+const base = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, slot: null, yaw: 0, pitch: 0 };
 const run = (w, p, inp, secs) => {
   const ev = [];
   for (let i = 0; i < Math.round(secs / TICK); i++) { w.step(TICK, { [p.id]: [{ ...base, ...inp }] }); ev.push(...w.drainEvents()); }
@@ -29,7 +29,11 @@ const mk = () => {
 {
   const { w, p } = mk();
   run(w, p, { mz: 1 }, 1);
-  assert.ok(Math.abs(Math.hypot(p.vel.x, p.vel.z) - RUN_SPEED) < 0.01, '走り速度 6.75');
+  assert.ok(Math.abs(Math.hypot(p.vel.x, p.vel.z) - RUN_SPEED * 0.8) < 0.01, 'ライフルを持つと 5.4 m/s');
+  run(w, p, { slot: 'melee' }, 0.2);
+  run(w, p, { mz: 1 }, 1);
+  assert.ok(Math.abs(Math.hypot(p.vel.x, p.vel.z) - RUN_SPEED) < 0.01, 'ナイフなら 6.75 m/s');
+  run(w, p, { slot: 'primary' }, 0.2);
   run(w, p, { mz: 1, yaw: Math.PI }, 4); // 南の壁へ
   assert.ok(p.pos.z < 58, `南の壁を抜けない (z=${p.pos.z})`);
   assert.ok(p.pos.z > 57, '壁際まで進む');
@@ -135,7 +139,7 @@ const stepAll = (w, cmds, n) => { const ev = []; for (let i = 0; i < n; i++) { w
 {
   const { w, a, b, c } = mkPvp();
   const place = (p, x, z) => { p.pos.x = x; p.pos.z = z; p.pos.y = 0; p.histN = 0; };
-  place(a, 0, 20); place(c, 0, 16); place(b, 0, 10); // a の正面に味方 c、その奥に敵 b
+  place(a, 4, 12); place(c, 4, 8); place(b, 4, 2); // 中庭。a の正面に味方 c、その奥に敵 b
   const pitch = Math.atan2(1.64 - 1.62, 10);
   const ev = stepAll(w, { a: [{ ...base, fire: true, pitch, seq: 1 }] }, 1);
   const hit = ev.find((e) => e.type === 'hit');
@@ -151,9 +155,9 @@ const stepAll = (w, cmds, n) => { const ev = []; for (let i = 0; i < n; i++) { w
 // ラグ補償: 敵が動いた後でも、撃った人に見えていた過去の位置に当たる
 {
   const { w, a, b } = mkPvp();
-  a.pos.x = 0; a.pos.z = 20; b.pos.x = 0; b.pos.z = 10; b.pos.y = 0;
-  stepAll(w, {}, 20);                 // b は (0,10) に立っている
-  b.pos.x = 3;                        // 急に横へ動いた
+  a.pos.x = 4; a.pos.z = 12; b.pos.x = 4; b.pos.z = 2; b.pos.y = 0;
+  stepAll(w, {}, 20);                 // b は (4,2) に立っている
+  b.pos.x = 7;                        // 急に横へ動いた
   stepAll(w, {}, 6);                  // 約 0.09 秒経過
   const pitch = Math.atan2(1.2 - 1.62, 10);
   a.lagComp = 0;

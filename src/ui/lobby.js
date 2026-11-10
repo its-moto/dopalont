@@ -33,6 +33,7 @@ export class LobbyUI {
     $('btn-balance').addEventListener('click', () => this.room.hostAct({ type: 'balance' }));
     $('btn-shuffle').addEventListener('click', () => this.room.hostAct({ type: 'shuffle' }));
     $('btn-start').addEventListener('click', () => handlers.onStart());
+    $('lobby-wins').addEventListener('change', (e) => this.room.hostAct({ type: 'wins', value: Number(e.target.value) }));
   }
 
   me() { return this.room.lobby.players.find((p) => p.id === this.room.myId); }
@@ -103,6 +104,8 @@ export class LobbyUI {
     $('btn-ready').hidden = host || !me || me.team === 'spec';
     if (me) $('btn-ready').textContent = me.ready ? '準備を取り消す' : '準備完了';
     for (const id of ['btn-balance', 'btn-shuffle', 'btn-start']) $(id).hidden = !host;
+    $('lobby-wins').value = String(lobby.settings.wins);
+    $('lobby-wins').disabled = !host;
     const st = canStart(lobby);
     $('btn-start').disabled = !st.ok;
     $('btn-start').textContent = st.ok && st.waiting ? `試合開始 (${st.waiting} 人が準備中)` : '試合開始';

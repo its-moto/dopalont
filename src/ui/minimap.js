@@ -85,7 +85,7 @@ export class Minimap {
    * @param view {{x,y,z,yaw}|null} 自分の位置と向き (観戦中は null)
    * @param myTeam 自分のチーム。null なら全員を敵として扱う (射撃場)
    */
-  update(dt, view, myTeam, remotes, targets, boxes) {
+  update(dt, view, myTeam, remotes, targets, boxes, spike = null) {
     this.time += dt;
     if (++this.tick % 2) return; // 1 フレームおきで十分
     const g = this.ctx, u = this.px / SIZE;
@@ -111,6 +111,13 @@ export class Minimap {
         this.dot(s.x, s.z, 4 * u, '#ff4a3c');
         g.globalAlpha = 1;
       }
+    }
+
+    // スパイク: 設置後は全員に、落ちている間は攻撃側にだけ見える
+    if (spike && (spike.state === 'planted' || (spike.state === 'dropped' && myTeam === 'attack'))) {
+      const sx = this.mx(spike.x), sy = this.my(spike.z), q = 5 * u;
+      g.fillStyle = spike.state === 'planted' && Math.floor(this.time * 3) % 2 ? '#ff5a3c' : '#ffd23f';
+      g.beginPath(); g.moveTo(sx, sy - q); g.lineTo(sx + q, sy); g.lineTo(sx, sy + q); g.lineTo(sx - q, sy); g.closePath(); g.fill();
     }
 
     if (view) {

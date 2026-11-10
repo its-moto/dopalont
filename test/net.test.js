@@ -6,7 +6,7 @@ import { HostSession } from '../src/net/host.js';
 import { ClientSession } from '../src/net/client.js';
 import * as L from '../src/net/lobby.js';
 
-const neutral = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, slot: null, yaw: 0, pitch: 0 };
+const neutral = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, slot: null, yaw: 0, pitch: 0 };
 const fakeInput = () => ({ state: { ...neutral }, keys: new Set(), sample() { return { ...this.state }; }, consumeEdges() {} });
 const wire = (m) => JSON.parse(JSON.stringify(m)); // 実際の通信と同じく JSON を通す
 
@@ -37,7 +37,10 @@ const hostRoom = { myId: 'h', lobby, conns: new Map([['c1', conn]]), broadcast: 
 let now = 0;
 const host = new HostSession(hostRoom, FOUNDRY);
 const toHost = [];
-const clientRoom = { myId: 'c1', sendInput: (c) => toHost.push({ at: now + 0.03, c: wire(c) }) };
+const clientRoom = {
+  myId: 'c1', sendInput: (c) => toHost.push({ at: now + 0.03, c: wire(c) }),
+  conn: { send: (m) => host.shop('c1', m.t, m.t === 'buy' ? m.item : m.slot) },
+};
 const client = new ClientSession(clientRoom, FOUNDRY, { roster: wire(host.rosterList()) });
 client.clock = () => now;
 const hi = fakeInput(), ci = fakeInput();
@@ -52,7 +55,8 @@ function run(secs) {
     host.update(TICK, hi);
     client.update(TICK, ci);
     for (const e of client.events) clientEvents.push(e);
-    if (client.events.some((e) => e.type === 'respawn' && e.playerId === 'c1')) ci.state.yaw = client.events.find((e) => e.type === 'respawn').yaw;
+    const sp = client.events.find((e) => e.type === 'respawn' && e.playerId === 'c1');
+    if (sp) ci.state.yaw = sp.yaw; // 画面側 (Game) がやっている「出現時に向きを合わせる」の代わり
   }
 }
 
@@ -80,11 +84,26 @@ assert.ok(seen && seen.alive, 'ホストが見える');
 assert.ok(Math.hypot(seen.x - hostP.pos.x, seen.z - hostP.pos.z) < 0.05);
 assert.ok(host.remotes.find((r) => r.id === 'c1'), 'ホスト側にも参加者が見える');
 
+// 購入: 参加側の注文をホストが処理し、結果が届く
+assert.equal(client.round.phase, 'buy', 'ラウンドの状態が届く');
+hp.credits = 9000; hostP.credits = 9000;
+client.buy('ar_tap'); host.buy('ar_tap');
+run(0.3);
+assert.equal(me.weapons.primary?.def.id, 'ar_tap', '買った武器が手元に反映される');
+assert.equal(me.credits, 9000 - 2900);
+assert.equal(client.roster.get('h').credits, 9000 - 2900, '味方や相手の所持金も届く');
+assert.equal(hostP.weapons.primary.def.id, 'ar_tap');
+
+// 購入フェーズを終わらせる
+host.world.round.timer = 0;
+run(0.3);
+assert.equal(client.round.phase, 'live');
+
 // 撃ち合い: 参加側がホストを撃つ。判定はホストで行われ、結果が参加側に届く
-hostP.pos.x = 0; hostP.pos.z = 20; hostP.pos.y = 0;
-hp.pos.x = 0; hp.pos.z = 10; hp.pos.y = 0; hp.vel.x = hp.vel.z = 0;
+hostP.pos.x = 4; hostP.pos.z = 12; hostP.pos.y = 0;
+hp.pos.x = 4; hp.pos.z = 2; hp.pos.y = 0; hp.vel.x = hp.vel.z = 0;
 run(0.5); // 位置の変更が参加側に伝わるのを待つ
-assert.ok(Math.abs(me.pos.z - 10) < 0.05, '大きなずれは一気に合わせる');
+assert.ok(Math.abs(me.pos.z - 2) < 0.05, '大きなずれは一気に合わせる');
 ci.state.yaw = Math.PI; ci.state.pitch = Math.atan2(1.2 - 1.62, 10); // 南 (ホストの方) を向いて胴を狙う
 run(0.2);
 clientEvents.length = 0;
@@ -101,24 +120,37 @@ assert.equal(client.roster.get('h').deaths, 1);
 assert.equal(host.roster.get('c1').kills, 1);
 assert.equal(hostP.alive, false);
 assert.equal(client.remotes.find((r) => r.id === 'h').alive, false, '倒した相手は消える');
+assert.equal(me.weapons.primary.ammo, hp.weapons.primary.ammo, '残弾の予測がホストと一致');
 
-// 復活
-run(3.2);
-assert.equal(hostP.alive, true, 'ホストが復活');
+// 全滅でラウンド終了 → 防衛 (参加側) の勝ち
+assert.ok(clientEvents.some((e) => e.type === 'roundEnd' && e.winner === 'defense' && e.reason === 'elim'));
+assert.equal(client.round.phase, 'end');
+assert.equal(client.round.score.defense, 1);
+assert.equal(me.credits, 9000 - 2900 + 200 + 3000 > 9000 ? 9000 : 9000 - 2900 + 200 + 3000, 'キルと勝利の報酬 (上限 9000)');
+
+// 次のラウンド: 全員が出現し直す。生き残った人は武器を持ち越し、弾は満タン
+clientEvents.length = 0;
+run(7.3);
+assert.equal(client.round.phase, 'buy'); assert.equal(client.round.number, 2);
+assert.equal(hostP.alive, true);
 assert.equal(client.remotes.find((r) => r.id === 'h').alive, true);
+assert.equal(me.weapons.primary?.def.id, 'ar_tap');
+assert.equal(me.weapons.primary.ammo, 25);
+assert.ok(me.pos.z < -44, 'スポーンに戻る');
+assert.ok(Math.abs(ci.state.yaw - Math.PI) < 1e-3, '向きもスポーンの向きに戻る');
+assert.ok(!hostP.weapons.primary, 'やられた人は武器を失う');
 
-// ホストが参加側を倒す → 参加側は死亡を知り、復活後は弾が満タンに戻る
-me.weapons.primary.ammo = 3;
-hostP.pos.x = 0; hostP.pos.z = 20; hostP.pos.y = 0; hp.pos.x = 0; hp.pos.z = 10; hp.pos.y = 0;
+// ホストが参加側を倒す → 参加側はやられたことを知る
+hostP.credits = 9000; host.buy('ar_tap');
+host.world.round.timer = 0;
+run(0.3);
+hostP.pos.x = 4; hostP.pos.z = 12; hostP.pos.y = 0; hp.pos.x = 4; hp.pos.z = 2; hp.pos.y = 0;
 hi.state.yaw = 0; hi.state.pitch = Math.atan2(1.64 - 1.62, 10);
 run(0.2);
 hi.state.fire = true; run(0.1); hi.state.fire = false;
 run(0.3);
 assert.equal(me.alive, false, '参加側がやられたことを知る');
-run(3.2);
-assert.equal(me.alive, true);
-assert.equal(me.hp, 100);
-assert.equal(me.weapons.primary.ammo, 25);
+assert.equal(client.round.score.attack, 1);
 
 // 途中退出
 host.removePlayer('c1');

@@ -32,13 +32,14 @@
       <div id="hints">
         <b>WASD</b> 移動　<b>Shift</b> 歩き　<b>Ctrl</b> しゃがみ　<b>Space</b> ジャンプ<br>
         <b>左</b> 射撃　<b>右</b> ADS / バースト　<b>R</b> リロード<br>
-        <b>1 / 2</b> 武器　<b>Tab</b> スコア　<b>Esc</b> メニュー
+        <b>1 / 2 / 3</b> 武器　<b>B</b> 購入　<b>F</b> 設置・解除<br>
+        <b>Tab</b> スコア　<b>Esc</b> メニュー
       </div>
     </div>
 
     <div id="scorebar" hidden>
       <span class="attack"><small>攻撃</small><b id="score-attack">0</b></span>
-      <span class="mode">チームデスマッチ<small>(仮ルール)</small></span>
+      <span class="mode"><b id="round-timer">0:00</b><small id="round-label"></small></span>
       <span class="defense"><b id="score-defense">0</b><small>防衛</small></span>
     </div>
 
@@ -62,7 +63,12 @@
       <div id="reload-bar"><div></div></div>
     </div>
 
-    <div id="death" hidden><div>やられた</div><small>復活まで <b id="death-sec">3</b></small></div>
+    <div id="credits" hidden><small>クレジット</small><b id="credits-val">800</b></div>
+    <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
+    <div id="status"></div>
+    <div id="progress" hidden><span id="progress-label"></span><div class="bar"><div id="progress-fill"></div></div></div>
+    <div id="scope" hidden><i></i><i></i></div>
+    <div id="death" hidden><div>やられた</div><small id="death-sub"></small></div>
     <div id="scoreboard" hidden></div>
 
     <div id="dopa">
@@ -104,9 +110,29 @@
         <button id="btn-balance">自動バランス</button>
         <button id="btn-shuffle">シャッフル</button>
         <button id="btn-start" class="primary">試合開始</button>
+        <label class="inline">勝利ラウンド数
+          <select id="lobby-wins">
+            <option value="13">13 本先取</option>
+            <option value="7">7 本先取</option>
+            <option value="5">5 本先取</option>
+            <option value="3">3 本先取 (お試し)</option>
+          </select></label>
       </div>
       <p id="lobby-msg" class="msg"></p>
       <div class="settings-slot"></div>
+    </div>
+  </div>
+
+  <!-- 購入メニュー -->
+  <div id="buy" class="screen" hidden>
+    <div class="panel shop">
+      <div class="shop-head">
+        <h2>購入</h2>
+        <span class="shop-credits">クレジット <b id="buy-credits">0</b></span>
+        <button id="buy-close">閉じる (B)</button>
+      </div>
+      <div id="buy-grid"></div>
+      <p id="buy-note" class="msg dim"></p>
     </div>
   </div>
 

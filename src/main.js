@@ -11,6 +11,7 @@ import { ClientRoom } from './net/client.js';
 import { normalizeCode } from './net/peer.js';
 import { NET } from './net/config.js';
 import { LobbyUI } from './ui/lobby.js';
+import { BuyMenu } from './ui/buymenu.js';
 import { Game } from './game.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +24,7 @@ const input = new Input(settings);
 const canvas = $('view');
 input.attach(canvas);
 
+const buyMenu = new BuyMenu();
 let game = null;     // 進行中の試合 (表示側)
 let room = null;     // 接続中の部屋 (HostRoom か ClientRoom)
 let gfx = null;      // レンダラーと素材。最初の試合で 1 回だけ作る
@@ -53,7 +55,7 @@ async function startGame(makeSession) {
   const { renderer, materials } = await ensureGfx();
   game?.dispose();
   const session = makeSession();
-  game = new Game({ renderer, materials, session, input, sfx, audio, settings });
+  game = new Game({ renderer, materials, session, input, sfx, audio, settings, buyMenu, hooks: { onUnlocked: () => show('pause') } });
   window.__game = game; // デバッグ用
   game.start();
   lobbyUI.close();
@@ -135,7 +137,11 @@ $('btn-range').addEventListener('click', () => {
 
 // ---- 一時停止 / 設定 ----
 // 対戦中はメニューを開いてもゲームは止まらない
-input.onLockChange = (locked) => { if (game) show(locked ? null : 'pause'); };
+input.onLockChange = (locked) => {
+  if (!game) return;
+  if (locked) show(null);
+  else if (!game.buyOpen) show('pause'); // 購入メニューを開いた時は、一時停止メニューを出さない
+};
 $('btn-resume').addEventListener('click', () => { audio.init(); input.lock(); });
 $('btn-end').addEventListener('click', () => { room.endGame(); toLobby(); });
 $('btn-quit').addEventListener('click', () => toTitle());
