@@ -51,6 +51,43 @@ for (const def of [FOUNDRY]) {
   // ---- サイト ----
   assert.deepEqual(Object.keys(map.sites).sort(), ['A', 'B']);
 
+  // ---- サイトまでの道のり: 防衛側は攻撃側より先に着ける。遠回り (ミッド経由だけ) になっていない ----
+  const walk = (sx, sz) => { // 歩く距離 (マス数)。届かないマスは -1
+    const dist = new Int32Array(W * H).fill(-1), q = [(Math.floor(sz) - oz) * W + (Math.floor(sx) - ox)];
+    dist[q[0]] = 0;
+    for (let k = 0; k < q.length; k++) {
+      const i = q[k], cx = i % W, cz = (i / W) | 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, nz = cz + dz;
+        if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+        const j = nz * W + nx;
+        if (dist[j] >= 0 || map.heights[j] < 0 || map.heights[j] - map.heights[i] > STEP_UP) continue;
+        dist[j] = dist[i] + 1; q.push(j);
+      }
+    }
+    return (site) => { // サイトの中で一番近いマスまで
+      let best = Infinity;
+      for (let z = site.min[1]; z < site.max[1]; z++) for (let x = site.min[0]; x < site.max[0]; x++) {
+        const d = dist[(z - oz) * W + (x - ox)];
+        if (d >= 0 && d < best) best = d;
+      }
+      return best;
+    };
+  };
+  // スポーンの真ん中あたりから測る (端の地点だと A と B で不公平になる)
+  const mid = (list) => list.reduce((b, p) => (Math.abs(p.x) < Math.abs(b.x) ? p : b));
+  const atk = mid(map.spawns.attack), dfn = mid(map.spawns.defense);
+  const fromAtk = walk(atk.x, atk.z), fromDef = walk(dfn.x, dfn.z);
+  const routes = [];
+  for (const name of ['A', 'B']) {
+    const a = fromAtk(map.sites[name]), d = fromDef(map.sites[name]);
+    routes.push(`${name}: 防衛 ${d}m / 攻撃 ${a}m`);
+    assert.ok(d < a, `防衛側が ${name} サイトに先に着ける (防衛 ${d}m、攻撃 ${a}m)`);
+    assert.ok(d <= 100, `防衛スポーンから ${name} サイトまでが遠すぎない (${d}m)`);
+    assert.ok(a >= 90 && a <= 190, `攻撃スポーンから ${name} サイトまでの距離が妥当 (${a}m)`);
+  }
+  console.log('  サイトまでの道のり  ' + routes.join('、'));
+
   // ---- 遮蔽物は床の上に置かれている (建物にめり込んだり、宙に浮いたりしていない) ----
   for (const p of def.props) {
     const y = p.y || 0, floor = at(p.x, p.z);
