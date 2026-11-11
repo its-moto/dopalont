@@ -20,7 +20,11 @@ function crushCurve(levels) {
 }
 
 export class AudioEngine {
-  constructor() { this.ctx = null; this.volume = 0.7; }
+  constructor() {
+    this.ctx = null; this.volume = 0.7;
+    this.listenerPos = { x: 0, y: 0, z: 0 };
+    this.occluded = null; // (point) => 壁の向こうか。Game が設定する
+  }
 
   /** ユーザー操作 (クリック) の中で呼ぶこと */
   init() {
@@ -30,7 +34,8 @@ export class AudioEngine {
     this.master = ctx.createGain();
     this.master.gain.value = this.volume;
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16; comp.ratio.value = 6; comp.attack.value = 0.002; comp.release.value = 0.12;
+    // 潰しすぎると遠くの小さな音まで持ち上がり、距離感がなくなる。ピークを抑える程度にとどめる
+    comp.threshold.value = -8; comp.ratio.value = 3; comp.attack.value = 0.002; comp.release.value = 0.12;
     this.master.connect(comp).connect(ctx.destination);
 
     // ノイズ (2 秒) を使い回す
@@ -63,11 +68,12 @@ export class AudioEngine {
     // 銃声: 軽く歪ませて太くする
     this.gunIn = ctx.createGain();
     const drive = ctx.createWaveShaper();
-    drive.curve = distortionCurve(2.4);
+    drive.curve = this.driveCurve = distortionCurve(2.4);
     this.gunIn.connect(drive).connect(this.buses.weapon);
     const gunSend = ctx.createGain();
     gunSend.gain.value = 0.35;
     this.gunIn.connect(gunSend).connect(this.reverb);
+    this.gunRev = gunSend; // 位置つきの銃声のリバーブ送り
 
     // 演出音: 低域を切って足音の帯域を空け、ビットクラッシュ + 短いディレイを通す
     this.uiIn = ctx.createGain();
@@ -95,6 +101,7 @@ export class AudioEngine {
   }
 
   setListener(pos, fwd) {
+    this.listenerPos.x = pos.x; this.listenerPos.y = pos.y; this.listenerPos.z = pos.z;
     if (!this.ctx) return;
     const l = this.ctx.listener;
     if (l.positionX) {
@@ -108,13 +115,30 @@ export class AudioEngine {
   }
 
   /** 位置つきの出力先を作る */
-  spatial(point, dest, ref = 4) {
-    const p = this.ctx.createPanner();
-    p.panningModel = 'equalpower';
-    p.distanceModel = 'inverse';
-    p.refDistance = ref; p.rolloffFactor = 1.3; p.maxDistance = 200;
+  /**
+   * 位置つきの出力先を作る。返したノードに音をつなぐ
+   * ref: この距離までは最大音量。max: この距離で聞こえなくなる
+   * - 距離: max で完全に消える (以前の方式は遠くでも小さく鳴り続けた)
+   * - 方向: HRTF で左右と前後がわかる
+   * - 壁越し (occluded が true を返す時) と遠くの音は、高音を削って籠らせる
+   */
+  spatial(point, dest, ref = 4, max = ref * 8) {
+    const ctx = this.ctx, L = this.listenerPos;
+    const d = Math.hypot(point[0] - L.x, point[1] - L.y, point[2] - L.z);
+    const far = Math.min(1, Math.max(0, (d - ref) / (max - ref)));
+    const occ = this.occluded ? this.occluded(point) : false;
+    const p = ctx.createPanner();
+    p.panningModel = 'HRTF';
+    p.distanceModel = 'linear';
+    p.refDistance = ref; p.maxDistance = max; p.rolloffFactor = 1;
     p.positionX.value = point[0]; p.positionY.value = point[1]; p.positionZ.value = point[2];
-    p.connect(dest);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = (occ ? 1200 : 16000) * (1 - far * 0.85);
+    const g = ctx.createGain();
+    g.gain.value = (occ ? 0.45 : 1) * (1 - far * 0.6); // linear の減衰にさらに掛けて、遠くほど急に小さく
+    p.connect(lp).connect(g).connect(dest);
+    p.tail = g; // 減衰後の出口 (リバーブへ送る時に使う)
     return p;
   }
 

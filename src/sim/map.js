@@ -1,6 +1,6 @@
 import { hash2 } from '../core/math.js';
 
-const BUILDING_MATS = ['concrete', 'sandstone', 'painted', 'concrete', 'sandstone', 'metal'];
+const BUILDING_MATS = ['concrete', 'sandstone', 'painted', 'brick', 'plaster', 'sandstone', 'brick', 'metal', 'plaster'];
 const MAX_WALL = 12;     // 建物 1 棟の最大サイズ (m)。細かく分けると高さと素材に変化が出る
 const ROOF_CLEAR = 3.4;  // 屋根つきエリアの天井の高さ (床から)
 const SOLID = -1;

@@ -35,7 +35,8 @@ function moveAxis(boxes, p, axis, delta, h) {
   pos[axis] = old + delta;
   const b = overlap(boxes, pos.x, pos.y, pos.z, h);
   if (!b) return;
-  if (p.onGround && b.max[1] - pos.y <= STEP_UP && !overlap(boxes, pos.x, b.max[1] + EPS, pos.z, h)) {
+  // 地上なら段差を上る。空中でも縁に届けば上がれる (ジャンプ 1.1m + 0.45m = 約 1.5m の箱まで乗れる)
+  if (b.max[1] - pos.y <= STEP_UP && !overlap(boxes, pos.x, b.max[1] + EPS, pos.z, h)) {
     pos.y = b.max[1] + EPS;
     return;
   }

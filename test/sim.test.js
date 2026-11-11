@@ -55,6 +55,18 @@ const mk = () => {
   assert.ok(p.pos.y < 0.01 && Math.abs(p.pos.x - -8.95) < 0.01, `木箱で止まる (x=${p.pos.x.toFixed(2)})`);
 }
 
+// 木箱 (1.4m) は、押し付けながらジャンプすれば乗れる
+{
+  const { w, p } = mk();
+  p.pos.x = -8.9; p.pos.z = 40; // 木箱のすぐ東
+  let onTop = false;
+  for (let i = 0; i < 64 && !onTop; i++) {
+    w.step(TICK, { me: [{ ...base, mz: 1, yaw: Math.PI / 2, jump: true }] });
+    onTop = p.onGround && Math.abs(p.pos.y - 1.4) < 0.01;
+  }
+  assert.ok(onTop, `ジャンプで木箱に乗れる (y=${p.pos.y.toFixed(2)}, x=${p.pos.x.toFixed(2)})`);
+}
+
 // 坂 (0.4m の段) は歩くだけで上れる。台の縁からは飛び降りられる
 {
   const { w, p } = mk();

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { lerp } from './core/math.js';
 import { eyeHeight } from './sim/movement.js';
 import { WEAPONS } from './data/weapons.js';
+import { blocked } from './sim/combat.js';
 import { RULES, REASON_TEXT } from './data/rules.js';
 import { TEAM_LABEL } from './net/config.js';
 import { createScene, BASE_FOV } from './render/scene.js';
@@ -106,6 +107,14 @@ export class Game {
       };
     }
 
+    // 音が壁の向こうから来るか (籠らせる判定)
+    const ear = [0, 0, 0];
+    audio.occluded = (pt) => {
+      const c = this.camera.position;
+      ear[0] = c.x; ear[1] = c.y; ear[2] = c.z;
+      return blocked(world.boxes, ear, pt);
+    };
+
     this.onResize = () => this.resize();
     window.addEventListener('resize', this.onResize);
     this.resize();
@@ -134,6 +143,7 @@ export class Game {
 
   dispose() {
     this.running = false;
+    this.audio.occluded = null;
     this.ticker?.terminate();
     this.closeBuy(false, true);
     this.hud.show(false);

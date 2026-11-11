@@ -4,7 +4,7 @@ import { canvasTexture } from './textures.js';
 // 弾痕・トレーサー・着弾の粉塵と火花・マズルの光。毎フレーム new しないよう全部プールする
 
 const MAX_DECALS = 160, MAX_TRACERS = 12, MAX_PARTICLES = 700;
-const DUST = { sand: [0.78, 0.66, 0.48], sandstone: [0.8, 0.66, 0.46], concrete: [0.62, 0.61, 0.58], painted: [0.7, 0.68, 0.62], tile: [0.6, 0.62, 0.64], wood: [0.5, 0.35, 0.2], metal: [0.35, 0.33, 0.3] };
+const DUST = { brick: [0.6, 0.3, 0.22], plaster: [0.8, 0.77, 0.68], tarp: [0.3, 0.38, 0.26], sandbag: [0.7, 0.6, 0.44], planks: [0.5, 0.36, 0.22], asphalt: [0.3, 0.3, 0.32], metal2: [0.4, 0.34, 0.2], sand: [0.78, 0.66, 0.48], sandstone: [0.8, 0.66, 0.46], concrete: [0.62, 0.61, 0.58], painted: [0.7, 0.68, 0.62], tile: [0.6, 0.62, 0.64], wood: [0.5, 0.35, 0.2], metal: [0.35, 0.33, 0.3] };
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3();
 const _z = new THREE.Vector3(0, 0, 1), _n = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
@@ -140,7 +140,7 @@ export class Effects {
       this.particle(x, y, z, nx * sp + rnd() * 1.2, ny * sp + rnd() * 1.2 + 0.4, nz * sp + rnd() * 1.2,
         c[0], c[1], c[2], 0.55, 0.1 + Math.random() * 0.14, 0.35 + Math.random() * 0.35, 1.5);
     }
-    const sparks = mat === 'metal' ? 8 : 2;
+    const sparks = mat === 'metal' || mat === 'metal2' ? 8 : 2;
     for (let i = 0; i < sparks; i++) {
       const sp = 3 + Math.random() * 5;
       this.particle(x, y, z, nx * sp + rnd() * 4, ny * sp + rnd() * 4, nz * sp + rnd() * 4,

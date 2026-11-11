@@ -45,6 +45,13 @@ Object.assign(GUNS, {
 });
 
 const STEPS = {
+  brick: { f: 1700, q: 1.2, dur: 0.055, gain: 0.2 },
+  plaster: { f: 1700, q: 1.2, dur: 0.055, gain: 0.2 },
+  asphalt: { f: 1500, q: 1.0, dur: 0.06, gain: 0.2 },
+  planks: { f: 900, q: 2.0, dur: 0.08, gain: 0.24, ring: 180 },
+  tarp: { f: 600, q: 0.7, dur: 0.09, gain: 0.2 },
+  sandbag: { f: 500, q: 0.6, dur: 0.1, gain: 0.22 },
+  metal2: { f: 2600, q: 1.4, dur: 0.06, gain: 0.2, ring: 520 },
   sand: { f: 650, q: 0.6, dur: 0.1, gain: 0.22 },
   concrete: { f: 1700, q: 1.2, dur: 0.055, gain: 0.2 },
   sandstone: { f: 1500, q: 1.1, dur: 0.06, gain: 0.2 },
@@ -73,11 +80,19 @@ export class Sfx {
     const e = this.e, t = e.now, r = GUNS[kind];
     const pv = 0.96 + Math.random() * 0.08; // 毎発わずかに変えて機械的に聞こえないように
     if (kind === 'knife') { // 空を切る音
-      const d = at ? e.spatial(at, e.buses.weapon, 3) : e.buses.weapon;
+      const d = at ? e.spatial(at, e.buses.weapon, 2, 22) : e.buses.weapon;
       e.noise({ t, f: 900, f1: 3200, q: 1.2, dur: 0.16, gain: 0.28, attack: 0.03, dest: d });
       return;
     }
-    const dest = at ? e.spatial(at, e.gunIn, 9) : e.gunIn;
+    let dest = e.gunIn;
+    if (at) {
+      // 歪み (音を太くする処理) は小さい音を持ち上げてしまうので、距離の減衰より前に掛ける
+      const pan = e.spatial(at, e.buses.weapon, 7, kind === 'silenced' ? 45 : 150);
+      pan.tail.connect(e.gunRev);
+      dest = e.ctx.createWaveShaper();
+      dest.curve = e.driveCurve;
+      dest.connect(pan);
+    }
     e.noise({ t, type: 'highpass', f: r.crack.f * pv, dur: r.crack.dur, gain: r.crack.gain, dest });
     e.tone({ t, f0: r.body.f0 * pv, f1: r.body.f1, dur: r.body.dur, gain: r.body.gain, dest });
     if (r.sub) e.tone({ t, type: 'triangle', f0: r.sub.f0, f1: r.sub.f1, dur: r.sub.dur, gain: r.sub.gain, dest });
@@ -128,8 +143,8 @@ export class Sfx {
   impact(point, mat) {
     if (!this.ok) return;
     const e = this.e, t = e.now + 0.01;
-    const dest = e.spatial(point, e.buses.world);
-    if (mat === 'metal') {
+    const dest = e.spatial(point, e.buses.world, 3, 45);
+    if (mat === 'metal' || mat === 'metal2') {
       const f = 1500 + Math.random() * 1500;
       e.tone({ t, f0: f, f1: f * 0.94, dur: 0.18, gain: 0.3, dest });
       e.tone({ t, f0: f * 2.7, dur: 0.08, gain: 0.12, dest });
@@ -145,7 +160,7 @@ export class Sfx {
     const e = this.e, t = e.now, s = STEPS[mat] || STEPS.concrete;
     let pan;
     if (at) {
-      pan = e.spatial(at, e.buses.step, 5);
+      pan = e.spatial(at, e.buses.step, 2.5, 40); // 足音は約 40m まで
     } else {
       pan = e.ctx.createStereoPanner();
       pan.pan.value = (this.stepSide = -this.stepSide) * 0.18;
@@ -174,7 +189,7 @@ export class Sfx {
   /** 設置されたスパイクの警告音 (位置つき)。爆発が近いほど高く鳴る */
   spikeBeep(at, urgent) {
     if (!this.ok) return;
-    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 12);
+    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 6, 90);
     const f = urgent ? 1480 : 1100;
     e.tone({ t, type: 'square', f0: f, dur: 0.09, gain: 0.3, dest });
     e.tone({ t, f0: f * 2, dur: 0.06, gain: 0.15, dest });
@@ -183,7 +198,7 @@ export class Sfx {
   /** 設置・解除の作業音 */
   spikeWork(at, defuse) {
     if (!this.ok) return;
-    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 8);
+    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 3, 40);
     e.tone({ t, type: 'triangle', f0: defuse ? 620 : 420, f1: defuse ? 760 : 520, dur: 0.12, gain: 0.25, dest });
     e.noise({ t, f: 3000, q: 3, dur: 0.03, gain: 0.15, dest });
   }
@@ -196,7 +211,7 @@ export class Sfx {
 
   explosion(at) {
     if (!this.ok) return;
-    const e = this.e, t = e.now, dest = e.spatial(at, e.gunIn, 30);
+    const e = this.e, t = e.now, dest = e.spatial(at, e.gunIn, 25, 260);
     e.tone({ t, f0: 120, f1: 24, dur: 1.4, gain: 1.0, dest });
     e.tone({ t, type: 'triangle', f0: 60, f1: 20, dur: 1.8, gain: 0.8, dest });
     e.noise({ t, type: 'lowpass', f: 2400, f1: 120, dur: 2.2, gain: 0.9, attack: 0.01, dest });

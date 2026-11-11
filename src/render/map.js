@@ -98,13 +98,30 @@ export function buildMapMeshes(map, materials) {
     group.add(mesh);
   }
 
+  // エリアごとの床。地面 (砂) の上に薄く重ねる
+  const floors = {};
+  for (const a of map.areas) {
+    if (!a.floor || a.poly) continue;
+    const gb = (floors[a.floor] ??= new GeoBuilder());
+    const k = 1 / materials[a.floor].userData.meters, y = (a.h || 0) + 0.006;
+    gb.quad([a.x0, y, a.z1], [a.x1, y, a.z1], [a.x1, y, a.z0], [a.x0, y, a.z0], [0, 1, 0],
+      [[a.x0 * k, a.z1 * k], [a.x1 * k, a.z1 * k], [a.x1 * k, a.z0 * k], [a.x0 * k, a.z0 * k]], [1, 1, 1, 1]);
+  }
+  for (const name in floors) {
+    const m = materials[name].clone();
+    m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1;
+    const mesh = new THREE.Mesh(floors[name].build(), m);
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
   // サイトの床 (タイル) と文字
   const tile = materials.tile.clone();
   tile.polygonOffset = true; tile.polygonOffsetFactor = -1; tile.polygonOffsetUnits = -1;
   for (const name in map.sites) {
     const s = map.sites[name];
     const gb = new GeoBuilder();
-    const [x0, z0] = s.min, [x1, z1] = s.max, k = 1 / tile.userData.meters, y = 0.01;
+    const [x0, z0] = s.min, [x1, z1] = s.max, k = 1 / tile.userData.meters, y = 0.012;
     gb.quad([x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0], [0, 1, 0],
       [[x0 * k, z1 * k], [x1 * k, z1 * k], [x1 * k, z0 * k], [x0 * k, z0 * k]], [1, 1, 1, 1]);
     const floor = new THREE.Mesh(gb.build(), tile);
