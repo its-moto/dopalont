@@ -12,13 +12,14 @@ import { RULES } from '../data/rules.js';
  * LocalSession は射撃場 (1 人、通信なし)
  */
 export class LocalSession {
-  constructor(mapDef, name) {
+  constructor(mapDef, name, agent = 'gale') {
     this.mode = 'range';
     this.isHost = true;
     this.myId = 'me';
     this.world = new World(mapDef, { seed: (Math.random() * 1e9) | 0, infiniteReserve: true });
-    this.me = this.world.addPlayer(this.myId, { ...mapDef.rangeSpawn, name });
-    this.roster = new Map([[this.myId, { id: this.myId, name, team: null, kills: 0, deaths: 0 }]]);
+    this.me = this.world.addPlayer(this.myId, { ...mapDef.rangeSpawn, name, agent });
+    this.roster = new Map([[this.myId, { id: this.myId, name, team: null, agent, kills: 0, deaths: 0 }]]);
+    this.ents = this.world.ents;
     this.remotes = [];
     this.events = [];
     this.acc = 0; this.alpha = 0; this.stepOff = 0;
@@ -49,5 +50,6 @@ export class LocalSession {
     }
     this.alpha = this.acc / TICK;
     for (const e of world.drainEvents()) this.events.push(e);
+    this.ents = world.marks.length ? world.ents.concat(world.marks) : world.ents;
   }
 }

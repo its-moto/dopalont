@@ -3,6 +3,7 @@ import { WEAPONS } from '../data/weapons.js';
 import { RULES, PENETRATION } from '../data/rules.js';
 import { RUN_SPEED, eyeHeight } from './movement.js';
 import { onKill } from './round.js';
+import { abilityKill, recallBack } from './abilities.js';
 
 const MAX_RANGE = 400;
 const FIRE_BUFFER = 0.08;  // セミオートの先行入力を受け付ける時間
@@ -88,6 +89,43 @@ export function blocked(boxes, a, b) {
   return false;
 }
 
+/** 壁だけを相手にしたレイ。当たれば { t, normal }、なければ null (投げ物の移動などに使う) */
+export function rayWalls(world, o, d, maxDist) {
+  const boxes = world.boxes;
+  let best = maxDist, axis = -2;
+  for (let i = 0; i < boxes.length; i++) {
+    const t = rayBox(o, d, boxes[i].min, boxes[i].max, best);
+    if (t >= 0 && t < best) { best = t; axis = _axis; }
+  }
+  if (axis === -2) return null;
+  const normal = [0, 0, 0];
+  if (axis >= 0) normal[axis] = d[axis] > 0 ? -1 : 1; else normal[1] = 1;
+  return { t: best, normal };
+}
+
+/**
+ * ダメージを与える共通の入口 (銃もアビリティもここを通る)。倒したら true
+ * attacker は null でもよい (持ち主が抜けた後の炎など)
+ */
+export function damageEntity(world, attacker, ent, damage, part, point, weapon, through = false) {
+  if (!ent.alive || damage <= 0) return false;
+  let killed = applyDamage(ent, damage);
+  if (killed && ent.recall) { recallBack(world, ent); killed = false; } // リワインド中はやられても戻る
+  world.emit('hit', { playerId: attacker ? attacker.id : null, victimId: ent.id, part, damage, killed, point, through });
+  if (!killed) return false;
+  ent.alive = false;
+  ent.respawnAt = world.time + (ent.isTarget ? KILL_RESPAWN.target : KILL_RESPAWN.player);
+  if (!ent.isTarget) {
+    ent.deathPos = { x: ent.pos.x, y: ent.pos.y, z: ent.pos.z };
+    ent.deaths++;
+    if (attacker && attacker !== ent) attacker.kills++;
+    onKill(world, attacker, ent);
+    abilityKill(world, attacker, ent);
+  }
+  world.emit('kill', { playerId: attacker ? attacker.id : null, victimId: ent.id, headshot: part === 'head', weapon });
+  return true;
+}
+
 const _rw = { x: 0, y: 0, z: 0, crouch: 0 };
 
 /**
@@ -96,12 +134,12 @@ const _rw = { x: 0, y: 0, z: 0, crouch: 0 };
  * 壁に当たった場合、exit はその壁を抜けるまでの距離 (壁抜きの判定に使う)
  */
 export function raycast(world, o, d, shooter = null, maxDist = MAX_RANGE) {
-  const hit = { t: maxDist, kind: 'none', normal: null, mat: null, ent: null, part: null, exit: 0 };
+  const hit = { t: maxDist, kind: 'none', normal: null, mat: null, ent: null, part: null, exit: 0, box: null };
   const boxes = world.boxes;
   for (let i = 0; i < boxes.length; i++) {
     const t = rayBox(o, d, boxes[i].min, boxes[i].max, hit.t);
     if (t < 0 || t >= hit.t) continue;
-    hit.t = t; hit.kind = 'wall'; hit.mat = boxes[i].mat; hit.exit = _exit;
+    hit.t = t; hit.kind = 'wall'; hit.mat = boxes[i].mat; hit.exit = _exit; hit.box = boxes[i];
     hit.normal = [0, 0, 0];
     if (_axis >= 0) hit.normal[_axis] = d[_axis] > 0 ? -1 : 1;
     else hit.normal[1] = 1; // 始点が箱の中 (壁抜きの 2 本目のレイ): 抜けられない壁として扱う
@@ -162,11 +200,28 @@ function fireShot(world, p, w, forcedSpread) {
   const range = def.melee ? def.range : MAX_RANGE;
   const impacts = [];
 
+  const range0 = def.range || range;
   for (let i = 0; i < def.pellets; i++) {
     const a = world.rng() * Math.PI * 2, m = spread * Math.sqrt(world.rng());
     const y2 = yaw + Math.cos(a) * m, p2 = pitch + Math.sin(a) * m, cp = Math.cos(p2);
     const d = [-Math.sin(y2) * cp, Math.sin(p2), -Math.cos(y2) * cp];
+
+    if (def.pierceAll) { // 壁を無視して、線上の敵すべてに当たる
+      impacts.push({ point: [o[0] + d[0] * range0, o[1] + d[1] * range0, o[2] + d[2] * range0], kind: 'none', normal: null, mat: null });
+      for (const pl of [...world.players.values(), ...world.targets]) {
+        if (pl === p || !pl.alive || (p.team && pl.team === p.team)) continue;
+        const h = { t: range0, kind: 'none' };
+        if (pl.isTarget) rayBody(o, d, pl, pl.pos, 0, h);
+        else { world.rewound(pl, p.lagComp, _rw); rayBody(o, d, pl, _rw, _rw.crouch, h); }
+        if (h.kind !== 'ent') continue;
+        const pt = [o[0] + d[0] * h.t, o[1] + d[1] * h.t, o[2] + d[2] * h.t];
+        if (damageEntity(world, p, pl, damageFor(def, h.part, h.t), h.part, pt, def.id, true) && def.refreshOnKill) w.ammo = def.magSize + 1;
+      }
+      continue;
+    }
+
     let hit = raycast(world, o, d, p, range), dist = hit.t, mul = 1;
+    if (hit.kind === 'wall' && hit.box.kind === 'dyn') hit.box.hp -= damageFor(def, 'body', dist); // 氷の壁は撃てば壊れる
     impacts.push({ point: [o[0] + d[0] * dist, o[1] + d[1] * dist, o[2] + d[2] * dist], kind: hit.kind, normal: hit.normal, mat: hit.mat });
 
     // 壁抜き: 薄い壁なら 1 枚だけ抜けて、威力を落として奥の敵に当たる
@@ -181,17 +236,9 @@ function fireShot(world, p, w, forcedSpread) {
     }
 
     if (hit.kind === 'ent') {
-      const ent = hit.ent;
-      const damage = Math.round(damageFor(def, hit.part, dist) * mul);
-      const killed = applyDamage(ent, damage);
       const point = [o[0] + d[0] * dist, o[1] + d[1] * dist, o[2] + d[2] * dist];
-      world.emit('hit', { playerId: p.id, victimId: ent.id, part: hit.part, damage, killed, point, through: mul < 1 });
-      if (killed) {
-        ent.alive = false;
-        ent.respawnAt = world.time + (ent.isTarget ? KILL_RESPAWN.target : KILL_RESPAWN.player);
-        if (!ent.isTarget) { ent.deaths++; p.kills++; onKill(world, p, ent); }
-        world.emit('kill', { playerId: p.id, victimId: ent.id, headshot: hit.part === 'head', weapon: def.id });
-      }
+      const killed = damageEntity(world, p, hit.ent, Math.round(damageFor(def, hit.part, dist) * mul), hit.part, point, def.id, mul < 1);
+      if (killed && def.refreshOnKill) w.ammo = def.magSize + 1; // この後の 1 発ぶんの消費を見越して満タンに
     }
   }
 
@@ -268,6 +315,7 @@ export function stepCombat(world, p, inp, dt) {
           // ヘビー武器は撃ち続けるほど速くなる
           let rate = def.rampTo ? lerp(def.fireRate, def.rampTo, Math.min(1, p.sprayIndex / def.rampShots)) : def.fireRate;
           if (p.ads) rate *= def.ads.fireRateMul;
+          rate *= p.rateMul || 1; // ラリービーコンの中
           fireShot(world, p, w, 0);
           // tick の端数を持ち越して、連射速度を正確に保つ
           w.nextFire = t - w.nextFire < dt ? w.nextFire + 1 / rate : t + 1 / rate;

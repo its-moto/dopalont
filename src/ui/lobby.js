@@ -1,5 +1,6 @@
 import { MAX_TEAM, TEAM_LABEL } from '../net/config.js';
 import { canStart } from '../net/lobby.js';
+import { AGENTS, AGENT_LIST } from '../data/agents.js';
 
 const $ = (id) => document.getElementById(id);
 const TEAMS = ['attack', 'defense', 'spec'];
@@ -71,6 +72,7 @@ export class LobbyUI {
       for (const p of members) {
         const li = el('li', p.id === room.myId ? 'me' : null);
         li.append(el('span', 'name', p.name));
+        if (team !== 'spec') li.append(el('span', 'agent-name', AGENTS[p.agent]?.name || ''));
         if (p.host) li.append(el('span', 'tag host', 'ホスト'));
         else if (team !== 'spec') li.append(el('span', p.ready ? 'tag ready' : 'tag', p.ready ? '準備OK' : '準備中'));
         if (host && p.id !== room.myId) {
@@ -99,6 +101,23 @@ export class LobbyUI {
       }
       box.append(col);
     }
+
+    // エージェント選択
+    const agents = $('lobby-agents');
+    agents.replaceChildren();
+    const mates = new Set(lobby.players.filter((p) => me && p !== me && p.team === me.team && me.team !== 'spec').map((p) => p.agent));
+    for (const a of AGENT_LIST) {
+      const b = el('button', me && me.agent === a.id ? 'agent selected' : 'agent');
+      b.style.setProperty('--c', `#${a.color.toString(16).padStart(6, '0')}`);
+      b.append(el('span', null, a.name), el('small', null, mates.has(a.id) ? '味方が使用中' : a.role));
+      b.disabled = !me || me.team === 'spec' || mates.has(a.id) || lobby.inGame;
+      b.addEventListener('click', () => room.act({ type: 'agent', agent: a.id }));
+      agents.append(b);
+    }
+    const mine = me && AGENTS[me.agent];
+    $('lobby-agent-info').textContent = mine && me.team !== 'spec'
+      ? `${mine.name}: ${mine.tagline}　／　${['c', 'q', 'e', 'x'].map((k) => `${k.toUpperCase()} ${mine.abilities[k].name}`).join('　')}`
+      : '';
 
     // 下のボタン
     $('btn-ready').hidden = host || !me || me.team === 'spec';

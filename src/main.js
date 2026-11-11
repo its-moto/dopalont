@@ -13,6 +13,7 @@ import { NET } from './net/config.js';
 import { LobbyUI } from './ui/lobby.js';
 import { BuyMenu } from './ui/buymenu.js';
 import { Game } from './game.js';
+import { AGENTS, AGENT_LIST } from './data/agents.js';
 
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['title', 'lobby', 'loading', 'pause'];
@@ -129,10 +130,14 @@ $('btn-join').addEventListener('click', async () => {
 });
 $('join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-join').click(); });
 
+for (const a of AGENT_LIST) $('range-agent').add(new Option(`${a.name} (${a.role})`, a.id));
+$('range-agent').value = AGENTS[settings.agent] ? settings.agent : 'gale';
 $('btn-range').addEventListener('click', () => {
   audio.init();
   const name = playerName();
-  startGame(() => new LocalSession(FOUNDRY, name));
+  settings.agent = $('range-agent').value;
+  saveSettings(settings);
+  startGame(() => new LocalSession(FOUNDRY, name, settings.agent));
 });
 
 // ---- 一時停止 / 設定 ----

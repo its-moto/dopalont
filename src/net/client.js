@@ -5,7 +5,7 @@ import { createLoadout } from '../sim/combat.js';
 import { applyInv } from '../sim/round.js';
 import { NET } from './config.js';
 import { joinHost } from './peer.js';
-import { E, F, emptyRound, unpackRound } from './protocol.js';
+import { E, F, emptyRound, unpackRound, unpackEnt } from './protocol.js';
 
 const EMPTY = {};
 const MAX_PENDING = 128;
@@ -80,13 +80,15 @@ export class ClientSession {
     this.isHost = false;
     this.room = room;
     this.myId = room.myId;
-    this.world = new World(mapDef, { targets: false });
+    this.world = new World(mapDef, { targets: false, abilities: false }); // アビリティの結果はホストから届く
+    this.ents = [];
+    this.iceKey = '';
     this.round = this.world.round = emptyRound(); // ホストから届く状態の写し。購入フェーズの壁の予測にも使う
     this.roster = new Map(startMsg.roster.map((r) => [r.id, r]));
     const mine = this.roster.get(this.myId);
     this.me = null;
     if (mine && mine.team !== 'spec') {
-      this.me = this.world.addPlayer(this.myId, { team: mine.team, name: mine.name, loadout: { sidearm: 'pistol_basic', melee: 'knife' } });
+      this.me = this.world.addPlayer(this.myId, { team: mine.team, name: mine.name, agent: mine.agent, loadout: { sidearm: 'pistol_basic', melee: 'knife' } });
       this.me.alive = false; // 最初のスナップショットが届くまで待つ
     }
     this.clock = () => performance.now() / 1000; // テストでは差し替える
@@ -127,6 +129,7 @@ export class ClientSession {
     this.alpha = this.acc / TICK;
     for (const e of world.drainEvents()) this.events.push(e);
 
+    if (me && me.abilCd > 0) me.abilCd -= dt; // 待ち時間の表示用に手元でも減らす
     const k = Math.exp(-dt * 12);
     this.viewOffset.x *= k; this.viewOffset.y *= k; this.viewOffset.z *= k;
     this.buildRemotes();
@@ -140,6 +143,20 @@ export class ClientSession {
     if (m.r) {
       unpackRound(m.r, this.round);
       if (this.me) this.me.acting = this.round.spike.user === this.myId ? 'busy' : null; // 設置・解除中は動けない
+    }
+    if (m.e) {
+      this.ents = m.e.map(unpackEnt);
+      // 氷の壁は当たり判定にも入れる (自分の移動の予測と、弾痕の表示のため)
+      let key = '';
+      for (const e of this.ents) if (e.kind === 'ice') key += e.id;
+      if (key !== this.iceKey) {
+        this.iceKey = key;
+        const w = this.world;
+        w.boxes.length = w.staticBoxes;
+        for (const e of this.ents) {
+          if (e.kind === 'ice') w.boxes.push({ min: [e.x - e.x2, e.y, e.z - e.z2], max: [e.x + e.x2, e.y + e.r, e.z + e.z2], mat: 'ice', kind: 'dyn' });
+        }
+      }
     }
     for (const e of m.p) {
       if (e[E.ID] === this.myId) { this.reconcile(e); continue; }
@@ -165,6 +182,9 @@ export class ClientSession {
         } else if (ev.type === 'roundStart') {
           for (const id in ev.teams) { const r = this.roster.get(id); if (r) r.team = ev.teams[id]; }
           if (this.me && ev.teams[this.myId]) this.me.team = ev.teams[this.myId];
+        } else if (ev.type === 'abil' && ev.playerId === this.myId && this.me) {
+          const me = this.me;
+          me.abil.c = ev.c; me.abil.q = ev.q; me.abil.e = ev.e; me.abilCd = ev.cd; me.ult = ev.ult;
         }
         if (ev.type === 'kill') {
           const k = this.roster.get(ev.playerId), v = this.roster.get(ev.victimId);
@@ -202,6 +222,9 @@ export class ClientSession {
     me.vel.x = e[E.VX]; me.vel.y = e[E.VY]; me.vel.z = e[E.VZ];
     me.crouch = e[E.CROUCH];
     me.onGround = (e[E.FLAGS] & F.GROUND) !== 0;
+    // アビリティによる移動の変化 (ダッシュ、減速) もホストの値から予測し直す
+    me.dashT = e[E.DASH]; me.dashX = me.vel.x; me.dashZ = me.vel.z;
+    me.slowMul = e[E.SLOW]; me.noJump = (e[E.FLAGS] & F.NOJUMP) !== 0;
     const stepDist = me.stepDist;
     world.muted = true; // やり直しでは足音などを鳴らさない
     for (const c of this.pending) stepMovement(world, me, c, TICK);

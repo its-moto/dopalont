@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TEAM_LABEL } from '../net/config.js';
+import { AGENTS, ABILITY_KEYS } from '../data/agents.js';
 
 const $ = (id) => document.getElementById(id);
 const _v = new THREE.Vector3();
@@ -31,11 +32,49 @@ export class Hud {
       feed: $('killfeed'), death: $('death'), deathSub: $('death-sub'), board: $('scoreboard'),
       timer: $('round-timer'), label: $('round-label'), credits: $('credits'), creditsVal: $('credits-val'),
       status: $('status'), progress: $('progress'), progressLabel: $('progress-label'), progressFill: $('progress-fill'),
+      flash: $('flash'), abilities: $('abilities'),
       banner: $('banner'), bannerMain: $('banner-main'), bannerSub: $('banner-sub'), scope: $('scope'),
     };
     this.cache = {};
     this.fpsT = 0; this.fpsN = 0; this.boardT = 0;
     this.bannerTimer = 0;
+    // アビリティの枠 (C / Q / E / X)
+    this.cells = {};
+    this.el.abilities.replaceChildren();
+    for (const k of ABILITY_KEYS) {
+      const cell = document.createElement('div');
+      cell.className = 'abil';
+      const key = document.createElement('b'), name = document.createElement('span'), count = document.createElement('i');
+      key.textContent = k.toUpperCase();
+      cell.append(key, name, count);
+      this.el.abilities.append(cell);
+      this.cells[k] = { cell, name, count };
+    }
+  }
+
+  /** アビリティの残り回数・待ち時間・アルティメットポイント。p が null なら隠す */
+  abilities(p, free) {
+    this.el.abilities.hidden = !p;
+    if (!p) return;
+    const defs = AGENTS[p.agent].abilities;
+    for (const k of ABILITY_KEYS) {
+      const def = defs[k], c = this.cells[k];
+      let text, ready;
+      if (k === 'x') { ready = free || p.ult >= def.ult; text = free ? '∞' : `${p.ult} / ${def.ult}`; }
+      else if (def.cooldown) { ready = p.abilCd <= 0; text = ready ? '使用可' : `${Math.ceil(p.abilCd)} 秒`; }
+      else if (free) { ready = p.abilCd <= 0 || k !== 'e'; text = '∞'; }
+      else { ready = p.abil[k] > 0; text = `× ${p.abil[k]}`; }
+      this.set('an' + k, c.name, def.name);
+      this.set('ac' + k, c.count, text);
+      const cls = `abil${ready ? ' ready' : ''}${k === 'x' ? ' ult' : ''}`;
+      if (c.cell.className !== cls) c.cell.className = cls;
+    }
+  }
+
+  flash(alpha) {
+    if (this.cache.flash === alpha) return;
+    this.cache.flash = alpha;
+    this.el.flash.style.opacity = alpha;
   }
 
   show(on) { this.root.hidden = !on; }

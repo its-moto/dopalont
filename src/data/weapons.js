@@ -214,6 +214,25 @@ const LIST = [
   }),
 ];
 
+// アルティメットで手に入る武器 (購入はできない。弾切れか時間切れで消える)
+const ACCURATE = { first: 0, stand: 0, perShot: 0, max: 0, walk: 0, run: 0, air: 0, crouchMul: 1 };
+LIST.push(
+  weapon({
+    id: 'ult_knives', name: 'ゲイルエッジ', slot: 'ult', model: 'knife', sound: 'knife', price: 0,
+    magSize: 5, reserveAmmo: 0, fireRate: 6, fireMode: 'semi', refreshOnKill: true, // キルで 5 本に戻る
+    damage: flat(150, 50, 50), spread: ACCURATE, // 走っても跳んでも正確
+    recoil: { pattern: [[0, 0]], recoverDelay: 0.1, recoverRate: 10, resetTime: 0.2 },
+    reloadTime: 0, equipTime: 0.4, moveSpeedMul: 1, penetration: 'low', kick: 0.6,
+  }),
+  weapon({
+    id: 'ult_beam', name: 'ピアサー', slot: 'ult', model: 'rifle', sound: 'sniper', price: 0,
+    magSize: 3, reserveAmmo: 0, fireRate: 1.2, fireMode: 'semi', pierceAll: true, range: 66, // 壁も敵も貫く
+    damage: flat(80, 80, 80), spread: ACCURATE,
+    recoil: { pattern: [[0, 0]], recoverDelay: 0.1, recoverRate: 10, resetTime: 0.2 },
+    reloadTime: 0, equipTime: 0.6, moveSpeedMul: 0.8, kick: 2.5,
+  }),
+);
+
 export const WEAPONS = Object.fromEntries(LIST.map((w) => [w.id, w]));
 
 /** 購入メニューの並び順 */

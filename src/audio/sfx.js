@@ -185,6 +185,57 @@ export class Sfx {
     e.noise({ t, f: s.f * 0.7, q: 0.8, dur: 0.11, gain: 0.3, dest: e.buses.step });
   }
 
+  // ---- アビリティ ----
+  /** 発動した瞬間の音。at が null なら自分 */
+  ability(kind, key, at) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now, dest = at ? e.spatial(at, e.buses.world, 4, 55) : e.buses.world;
+    switch (kind) {
+      case 'throw': case 'drone': e.noise({ t, f: 700, f1: 2600, q: 1, dur: 0.16, gain: 0.3, attack: 0.03, dest }); break;
+      case 'dash': e.noise({ t, f: 500, f1: 4200, q: 0.8, dur: 0.3, gain: 0.5, attack: 0.02, dest }); break;
+      case 'updraft': e.noise({ t, f: 400, f1: 2600, q: 0.7, dur: 0.45, gain: 0.45, attack: 0.08, dest }); break;
+      case 'weapon': case 'recall': case 'revive':
+        e.tone({ t, type: 'sawtooth', f0: 220, f1: 880, dur: 0.5, hold: 0.25, gain: 0.25, dest });
+        e.tone({ t, type: 'square', f0: 330, f1: 1320, dur: 0.5, hold: 0.25, gain: 0.12, dest });
+        break;
+      case 'heal': e.tone({ t, f0: 660, f1: 990, dur: 0.35, gain: 0.25, dest }); e.tone({ t: t + 0.12, f0: 990, f1: 1320, dur: 0.35, gain: 0.2, dest }); break;
+      default: e.tone({ t, type: 'triangle', f0: 300, f1: 520, dur: 0.18, gain: 0.25, dest });
+    }
+    if (key === 'x') { e.tone({ t, f0: 110, f1: 55, dur: 0.6, gain: 0.5, dest }); } // アルティメットは低いうなりを重ねる
+  }
+
+  /** 効果が出た場所の音 (煙の展開、着火、爆発など) */
+  effect(kind, at) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now, dest = e.spatial(at, e.buses.world, 5, 70);
+    switch (kind) {
+      case 'smoke': e.noise({ t, type: 'lowpass', f: 1800, f1: 300, dur: 0.9, gain: 0.5, attack: 0.05, dest }); break;
+      case 'fire': e.noise({ t, f: 900, f1: 2400, q: 0.6, dur: 0.7, gain: 0.55, attack: 0.02, dest }); e.tone({ t, f0: 140, f1: 60, dur: 0.3, gain: 0.4, dest }); break;
+      case 'slow': case 'ice': e.tone({ t, f0: 2400, f1: 700, dur: 0.5, gain: 0.25, dest }); e.noise({ t, type: 'highpass', f: 4000, dur: 0.3, gain: 0.25, dest }); break;
+      case 'iceBreak': for (let i = 0; i < 5; i++) e.tone({ t: t + i * 0.03, f0: 2000 + Math.random() * 2500, dur: 0.12, gain: 0.16, dest }); break;
+      case 'stim': e.tone({ t, type: 'square', f0: 440, f1: 660, dur: 0.3, gain: 0.14, dest }); break;
+      case 'flash': e.noise({ t, type: 'highpass', f: 3000, dur: 0.25, gain: 0.9, dest }); e.tone({ t, f0: 900, f1: 200, dur: 0.2, gain: 0.5, dest }); break;
+      case 'blast': e.tone({ t, f0: 180, f1: 40, dur: 0.4, gain: 0.9, dest }); e.noise({ t, f: 2600, q: 0.5, dur: 0.3, gain: 0.7, dest }); break;
+      case 'strike': e.tone({ t, type: 'sawtooth', f0: 90, f1: 60, dur: 3, hold: 2.6, gain: 0.5, dest }); e.noise({ t, type: 'lowpass', f: 900, dur: 3, gain: 0.5, attack: 0.1, dest }); break;
+      case 'ping': e.tone({ t, f0: 1400, f1: 1900, dur: 0.25, gain: 0.3, dest }); break;
+      case 'orb': case 'heal': case 'revive': case 'recall': e.tone({ t, f0: 880, f1: 1760, dur: 0.4, gain: 0.25, dest }); break;
+    }
+  }
+
+  /** 目がくらんでいる間の耳鳴り */
+  flashRing(dur) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, f0: 3800, dur: Math.max(0.4, dur), hold: dur * 0.5, gain: 0.07, dest: e.buses.world });
+  }
+
+  ultReady() {
+    if (!this.ok) return;
+    const t = this.e.now;
+    this.kyuin(t, 1.4, 0.2);
+    this.sparkle(t + 0.1, 5, 0.07);
+  }
+
   // ---- ラウンドとスパイク ----
   /** 設置されたスパイクの警告音 (位置つき)。爆発が近いほど高く鳴る */
   spikeBeep(at, urgent) {

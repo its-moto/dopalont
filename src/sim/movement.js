@@ -64,22 +64,27 @@ export function stepMovement(world, p, inp, dt) {
   if (wl > 0) { wx /= wl; wz /= wl; }
 
   let max = p.crouch > 0.5 ? CROUCH_SPEED : inp.walk ? WALK_SPEED : RUN_SPEED;
-  max *= p.moveMul;
+  max *= p.moveMul * (p.slowMul ?? 1); // slowMul: 減速エリアや加速ビーコンの中
 
   const accel = (p.onGround ? GROUND_ACCEL : AIR_ACCEL) * dt;
-  if (p.onGround || wl > 0) {
+  const dashing = p.dashT > 0;
+  if (dashing) { // ダッシュ中は決まった速度で一直線に進む (落ちない)
+    p.dashT -= dt;
+    p.vel.x = p.dashX; p.vel.z = p.dashZ; p.vel.y = 0;
+    if (p.dashT <= 0) { p.vel.x *= 0.3; p.vel.z *= 0.3; }
+  } else if (p.onGround || wl > 0) {
     const dx = wx * max - p.vel.x, dz = wz * max - p.vel.z;
     const dl = Math.hypot(dx, dz);
     if (dl <= accel) { p.vel.x = wx * max; p.vel.z = wz * max; }
     else { p.vel.x += (dx / dl) * accel; p.vel.z += (dz / dl) * accel; }
   }
 
-  if (inp.jump && p.onGround && !p.acting) {
+  if (inp.jump && p.onGround && !p.acting && !p.noJump) {
     p.vel.y = JUMP_V;
     p.onGround = false;
     world.emit('jump', { playerId: p.id });
   }
-  p.vel.y -= GRAVITY * dt;
+  if (!dashing) p.vel.y -= GRAVITY * dt;
 
   moveAxis(boxes, p, 'x', p.vel.x * dt, h);
   moveAxis(boxes, p, 'z', p.vel.z * dt, h);

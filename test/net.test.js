@@ -99,6 +99,23 @@ host.world.round.timer = 0;
 run(0.3);
 assert.equal(client.round.phase, 'live');
 
+// アビリティ: 参加側が押す → ホストが発動 → 結果が届く。ダッシュ中の位置も予測がずれない
+{
+  const z0 = me.pos.z;
+  ci.state.ab = 'e'; run(TICK); ci.state.ab = null;
+  run(0.6);
+  assert.ok(Math.abs(hp.pos.z - z0) > 3, `ホスト側でダッシュした (${Math.abs(hp.pos.z - z0).toFixed(1)}m)`);
+  assert.ok(Math.hypot(me.pos.x - hp.pos.x, me.pos.z - hp.pos.z) < 0.05, 'ダッシュ後の位置が参加側と一致');
+  assert.equal(me.abil.e, 0, '残り回数が届く');
+  hp.abil.c = 1;
+  ci.state.ab = 'c'; run(TICK); ci.state.ab = null;
+  run(0.3);
+  assert.ok(client.ents.some((e) => e.kind === 'proj'), '飛んでいる投げ物が見える');
+  run(1.5);
+  assert.ok(client.ents.some((e) => e.kind === 'smoke'), '煙幕が参加側にも出る');
+  assert.ok(host.ents.some((e) => e.kind === 'smoke'));
+}
+
 // 撃ち合い: 参加側がホストを撃つ。判定はホストで行われ、結果が参加側に届く
 hostP.pos.x = 4; hostP.pos.z = 12; hostP.pos.y = 0;
 hp.pos.x = 4; hp.pos.z = 2; hp.pos.y = 0; hp.vel.x = hp.vel.z = 0;

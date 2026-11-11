@@ -2,6 +2,7 @@ import { DEG, clamp } from './math.js';
 
 const MAX_PITCH = 89 * DEG;
 const SLOT_KEYS = { Digit1: 'primary', Digit2: 'sidearm', Digit3: 'melee' };
+const ABILITY_KEYS = { KeyC: 'c', KeyQ: 'q', KeyE: 'e', KeyX: 'x' };
 
 /** キーボードとマウス。Pointer Lock 中だけ入力を受け付ける */
 export class Input {
@@ -53,6 +54,8 @@ export class Input {
     const k = this.keys;
     let slot = null;
     for (const code in SLOT_KEYS) if (this.edges.has(code)) slot = SLOT_KEYS[code];
+    let ab = null;
+    for (const code in ABILITY_KEYS) if (this.edges.has(code)) ab = ABILITY_KEYS[code];
     return {
       mx: (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0),
       mz: (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0),
@@ -64,6 +67,7 @@ export class Input {
       reload: this.edges.has('KeyR'),
       use: k.has('KeyF'),
       slot,
+      ab,
       yaw: this.yaw,
       pitch: this.pitch,
     };

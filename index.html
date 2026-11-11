@@ -20,6 +20,7 @@
 
   <!-- ゲーム中の表示 -->
   <div id="hud" hidden>
+    <div id="flash"></div>
     <div id="edge"></div>
     <div id="hurt"></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
@@ -33,6 +34,7 @@
         <b>WASD</b> 移動　<b>Shift</b> 歩き　<b>Ctrl</b> しゃがみ　<b>Space</b> ジャンプ<br>
         <b>左</b> 射撃　<b>右</b> ADS / バースト　<b>R</b> リロード<br>
         <b>1 / 2 / 3</b> 武器　<b>B</b> 購入　<b>F</b> 設置・解除<br>
+        <b>C / Q / E / X</b> アビリティ<br>
         <b>Tab</b> スコア　<b>Esc</b> メニュー
       </div>
     </div>
@@ -63,6 +65,7 @@
       <div id="reload-bar"><div></div></div>
     </div>
 
+    <div id="abilities" hidden></div>
     <div id="credits" hidden><small>クレジット</small><b id="credits-val">800</b></div>
     <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
     <div id="status"></div>
@@ -90,7 +93,10 @@
         <input id="join-code" maxlength="6" placeholder="参加コード" autocomplete="off" spellcheck="false">
         <button id="btn-join">コードで参加</button>
       </div>
-      <button id="btn-range">射撃場 (ひとりで練習)</button>
+      <div class="row">
+        <button id="btn-range" style="flex:1">射撃場 (ひとりで練習)</button>
+        <select id="range-agent" title="射撃場で使うエージェント"></select>
+      </div>
       <p id="title-msg" class="msg"></p>
       <div class="settings-slot"></div>
     </div>
@@ -104,6 +110,7 @@
         <button id="btn-leave">退出</button>
       </div>
       <div id="lobby-teams"></div>
+      <div class="agent-pick"><small>エージェント (同じチームでは重複できません)</small><div id="lobby-agents"></div><p id="lobby-agent-info" class="msg dim"></p></div>
       <p id="lobby-status" class="msg dim"></p>
       <div class="lobby-actions">
         <button id="btn-ready" class="primary">準備完了</button>

@@ -206,7 +206,7 @@ assert.ok(got('matchEnd'));
       assert.ok(def[k] !== undefined, `${def.id} に ${k} がない`);
     }
   }
-  assert.equal(Object.keys(WEAPONS).length, 19, '18 種 + ナイフ');
+  assert.equal(Object.keys(WEAPONS).length, 21, '18 種 + ナイフ + アルティメット用 2 種');
 }
 
 console.log('round: すべて OK');

@@ -14,6 +14,7 @@ import { PlayerViews } from './render/characters.js';
 import { Hud } from './ui/hud.js';
 import { Dopamine } from './ui/dopamine.js';
 import { Minimap } from './ui/minimap.js';
+import { AbilityViews } from './render/abilities.js';
 
 const STEP_DIST = 2.4, STEP_SPEED = 4.4, HEAR_DIST = 45;
 const EYE_STAND = 1.62, EYE_CROUCH = 1.05;
@@ -68,6 +69,8 @@ export class Game {
     this.targets = new TargetViews(scene, world);
     this.players = new PlayerViews(scene);
     this.fx = new Effects(scene);
+    this.abilViews = new AbilityViews(scene, this.fx);
+    this.flashT = 0; this.flashDur = 1;
     this.vm = new ViewModel();
     this.vmDef = null;
     this.hud = new Hud();
@@ -238,6 +241,7 @@ export class Game {
     for (const e of session.events) this.onEvent(e);
 
     this.players.sync(remotes, this.myTeam, dt, spectating ? spectating.id : null);
+    this.abilViews.sync(session.ents, this.myTeam, dt);
     this.remoteFootsteps(remotes, dt);
     this.targets.update(dt, session.alpha);
     this.fx.update(dt);
@@ -260,6 +264,10 @@ export class Game {
     // ---- HUD ----
     this.hud.update(dt, p, world, this.stats);
     this.hud.scope(scoped);
+    this.hud.abilities(alive ? p : null, world.freeAbilities);
+    // 閃光: 真っ白になり、終わりぎわに戻ってくる
+    if (this.flashT > 0) this.flashT -= dt;
+    this.hud.flash(alive && this.flashT > 0 ? Math.min(1, (this.flashT / this.flashDur) * 2.2) : 0);
     if (this.net) {
       this.hud.death(!!p && !p.alive, spectating ? `観戦中: ${spectating.name}　(クリックで切り替え)` : '次のラウンドを待っています');
       this.hud.scoreboard(input.keys.has('Tab'), dt, session.roster, session.myId);
@@ -380,6 +388,14 @@ export class Game {
     return { name: r.name, ally: id === this.session.myId || (!!this.myTeam && r.team === this.myTeam) };
   }
 
+  /** 光の粒を球状に散らす (アビリティの発動や破裂) */
+  burst(at, color, count, speed) {
+    const rnd = () => Math.random() - 0.5;
+    for (let i = 0; i < count; i++) {
+      this.fx.particle(at[0], at[1], at[2], rnd() * speed, rnd() * speed + 1, rnd() * speed, color[0], color[1], color[2], 1, 0.06 + Math.random() * 0.08, 0.3 + Math.random() * 0.4, 4);
+    }
+  }
+
   /** 爆発: 火の粉と煙をまき散らす */
   explode(x, y, z) {
     const rnd = () => Math.random() - 0.5;
@@ -445,6 +461,21 @@ export class Game {
           this.vmDef = null;
         }
         break;
+      // ---- アビリティ ----
+      case 'ability': sfx.ability(e.kind, e.key, mine ? null : [e.x, e.y, e.z]); break;
+      case 'effect': {
+        const at = [e.x, e.y, e.z];
+        sfx.effect(e.kind, at);
+        if (e.kind === 'blast' || e.kind === 'iceBreak') this.burst(at, e.kind === 'blast' ? [1.2, 2.4, 4] : [1.6, 2.2, 2.6], 60, 12);
+        else if (e.kind === 'heal' || e.kind === 'revive' || e.kind === 'recall' || e.kind === 'orb') this.burst(at, e.kind === 'heal' ? [0.6, 3, 1.4] : [1.4, 2.4, 3.4], 40, 5);
+        else if (e.kind === 'flash') this.burst(at, [4, 4, 4], 30, 14);
+        break;
+      }
+      case 'flashed':
+        if (e.victimId === myId) { this.flashT = this.flashDur = e.dur; sfx.flashRing(e.dur); }
+        break;
+      case 'ultReady': if (mine) { hud.banner('', 'アルティメット準備完了 (X)', 'go', 1.8); sfx.ultReady(); } break;
+
       case 'join': hud.notice(`${e.player.name} が参加しました`); break;
       case 'left': hud.notice('プレイヤーが退出しました'); this.steps.delete(e.playerId); break;
       case 'targetRespawn': this.targets.onRespawn(e.targetId); break;

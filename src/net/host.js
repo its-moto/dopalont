@@ -4,7 +4,7 @@ import { World, TICK } from '../sim/world.js';
 import { NET } from './config.js';
 import * as L from './lobby.js';
 import { openHost } from './peer.js';
-import { packPlayer, packRound, NET_EVENTS } from './protocol.js';
+import { packPlayer, packRound, packEnts, NET_EVENTS } from './protocol.js';
 import { startRound, joinRound, buy, sell } from '../sim/round.js';
 import { RULES } from '../data/rules.js';
 
@@ -19,6 +19,7 @@ function cleanCmd(c) {
     mx: clamp(num(c.mx), -1, 1), mz: clamp(num(c.mz), -1, 1),
     jump: !!c.jump, crouch: !!c.crouch, walk: !!c.walk, fire: !!c.fire, alt: !!c.alt, reload: !!c.reload, use: !!c.use,
     slot: c.slot === 'primary' || c.slot === 'sidearm' || c.slot === 'melee' ? c.slot : null,
+    ab: c.ab === 'c' || c.ab === 'q' || c.ab === 'e' || c.ab === 'x' ? c.ab : null,
     yaw: num(c.yaw), pitch: clamp(num(c.pitch), -PITCH_LIMIT, PITCH_LIMIT),
   };
 }
@@ -87,6 +88,7 @@ export class HostRoom extends Emitter {
   apply(id, a) {
     if (!a || this.lobby.inGame) return;
     if (a.type === 'team') L.setTeam(this.lobby, id, a.team);
+    else if (a.type === 'agent') L.setAgent(this.lobby, id, a.agent);
     else if (a.type === 'ready') L.setReady(this.lobby, id, a.ready);
     else return;
     this.lobbyChanged();
@@ -166,6 +168,7 @@ export class HostSession {
     startRound(this.world);
     this.me = this.world.players.get(this.myId) || null;
     this.remotes = [];
+    this.ents = this.world.ents;
     this.pool = new Map();
     this.acc = 0; this.alpha = 0; this.stepOff = 0;
     this.viewOffset = { x: 0, y: 0, z: 0 };
@@ -174,11 +177,11 @@ export class HostSession {
   rosterList() { return [...this.roster.values()]; }
 
   addPlayer(pl, initial = false) {
-    const entry = { id: pl.id, name: pl.name, team: pl.team, kills: 0, deaths: 0, credits: RULES.startCredits };
+    const entry = { id: pl.id, name: pl.name, team: pl.team, agent: pl.agent, kills: 0, deaths: 0, credits: RULES.startCredits };
     this.roster.set(pl.id, entry);
     if (!initial) this.note({ type: 'join', player: entry });
     if (pl.team === 'spec') return;
-    const p = this.world.addPlayer(pl.id, { team: pl.team, name: pl.name });
+    const p = this.world.addPlayer(pl.id, { team: pl.team, name: pl.name, agent: pl.agent });
     if (!initial) joinRound(this.world, p); // 最初からいる人は startRound がまとめて出現させる
   }
 
@@ -249,12 +252,13 @@ export class HostSession {
     }
     this.alpha = this.acc / TICK;
     this.buildRemotes();
+    this.ents = world.marks.length ? world.ents.concat(world.marks) : world.ents;
   }
 
   sendSnapshot() {
     const p = [];
     for (const pl of this.world.players.values()) p.push(packPlayer(pl));
-    const msg = { t: 's', k: this.world.tick, p, r: packRound(this.world.round) };
+    const msg = { t: 's', k: this.world.tick, p, r: packRound(this.world.round), e: packEnts(this.world) };
     if (this.netEv.length) { msg.ev = this.netEv; this.netEv = []; }
     this.room.broadcast(msg);
   }

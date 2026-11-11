@@ -1,5 +1,6 @@
 import { SHOP, WEAPONS } from '../data/weapons.js';
 import { RULES } from '../data/rules.js';
+import { AGENTS } from '../data/agents.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,6 +45,11 @@ export class BuyMenu {
     for (const a of Object.values(RULES.armor)) add(col, a.id, 'armor', a.name, a.price, `+${a.value} (ダメージの 66% を肩代わり)`, a.value);
     grid.append(col);
 
+    // アビリティの列はエージェントごとに違うので、開くたびに作り直す
+    this.abilCol = el('div', 'shop-col');
+    grid.append(this.abilCol);
+    this.abilItems = [];
+
     $('buy-close').addEventListener('click', () => this.onClose?.());
     document.addEventListener('keydown', (e) => {
       if (this.root.hidden) return;
@@ -64,6 +70,23 @@ export class BuyMenu {
     $('buy-note').textContent = this.free
       ? '射撃場ではどの武器も無料で試せます'
       : 'クリックで購入 / 右クリックで売却 (このラウンドに買った物だけ、全額戻ります)';
+    this.abilCol.replaceChildren();
+    this.abilItems = [];
+    const agent = AGENTS[session.me?.agent];
+    if (agent && !this.free) {
+      this.abilCol.append(el('h3', null, `アビリティ (${agent.name})`));
+      for (const k of ['c', 'q', 'e']) {
+        const d = agent.abilities[k];
+        if (!d.price) continue;
+        const btn = el('button', 'item');
+        const note = el('span', 'inote', '');
+        btn.append(el('span', 'iname', `${k.toUpperCase()} ${d.name}`), el('span', 'iprice', String(d.price)), note);
+        btn.title = d.desc;
+        btn.addEventListener('click', () => this.order(`ab:${k}`, d.price));
+        this.abilCol.append(btn);
+        this.abilItems.push({ btn, note, key: k, def: d });
+      }
+    }
     this.root.hidden = false;
     this.refresh();
   }
@@ -78,6 +101,12 @@ export class BuyMenu {
       const owned = it.armor ? p.armor === it.armor : p.loadout[it.slot] === it.id;
       it.btn.classList.toggle('owned', owned);
       it.btn.classList.toggle('poor', !this.free && !owned && it.price > p.credits);
+    }
+    for (const it of this.abilItems) {
+      const n = p.abil[it.key], full = n >= it.def.max;
+      it.note.textContent = `持っている数 ${n} / ${it.def.max}`;
+      it.btn.classList.toggle('owned', full);
+      it.btn.classList.toggle('poor', !full && it.def.price > p.credits);
     }
   }
 }

@@ -1,6 +1,7 @@
 import { RULES } from '../data/rules.js';
 import { WEAPONS } from '../data/weapons.js';
 import { createLoadout } from './combat.js';
+import { roundAbilities, buyAbility, addUlt } from './abilities.js';
 
 // ラウンドの進行・スパイク・経済・購入 (DESIGN.md §4)。ホストの sim だけが動かす
 //
@@ -30,8 +31,8 @@ const aliveCount = (list) => list.reduce((n, p) => n + (p.alive ? 1 : 0), 0);
 
 function addCredits(p, n) { p.credits = Math.min(RULES.maxCredits, p.credits + n); }
 
-function emitInv(world, p) {
-  world.emit('inv', { playerId: p.id, credits: p.credits, armor: p.armor, primary: p.loadout.primary || null, sidearm: p.loadout.sidearm });
+export function emitInv(world, p) {
+  world.emit('inv', { playerId: p.id, credits: p.credits, armor: p.armor, primary: p.loadout.primary || null, sidearm: p.loadout.sidearm, ult: p.loadout.ult || null });
 }
 
 /** 武器スロットの中身を入れ替える (id が null なら外す) */
@@ -47,6 +48,7 @@ export function setSlot(p, slot, id) {
   }
   if (!p.weapons[p.slot]) p.slot = p.weapons.primary ? 'primary' : 'sidearm';
   p.sprayIndex = 0;
+  p.prevFire = true; // 持ち替えた瞬間に、押しっぱなしのボタンで撃ってしまわないように
   p.recoil.yaw = p.recoil.pitch = 0;
 }
 
@@ -54,8 +56,8 @@ export function setSlot(p, slot, id) {
 export function applyInv(p, e) {
   p.credits = e.credits;
   p.armor = e.armor;
-  for (const slot of ['primary', 'sidearm']) {
-    if ((p.loadout[slot] || null) !== e[slot]) setSlot(p, slot, e[slot]);
+  for (const slot of ['primary', 'sidearm', 'ult']) {
+    if ((p.loadout[slot] || null) !== (e[slot] || null)) setSlot(p, slot, e[slot] || null);
   }
 }
 
@@ -76,6 +78,7 @@ export function startRound(world) {
   r.phase = 'buy';
   r.timer = r.freshAll ? RULES.buyTimeFirst : RULES.buyTime;
   r.winner = null; r.reason = '';
+  roundAbilities(world);
 
   const pts = {}, next = { attack: 0, defense: 0 };
   for (const side of SIDES) { // スポーン地点を混ぜて、重ならないように配る
@@ -220,6 +223,7 @@ export function stepRound(world, dt) {
         Object.assign(s, { state: 'planted', carrier: null, user: null, plant: 0, defuse: 0, site, x: c.pos.x, y: c.pos.y, z: c.pos.z });
         r.phase = 'planted'; r.timer = RULES.spikeTime;
         for (const p of attackers) { addCredits(p, RULES.plantCredits); emitInv(world, p); }
+        addUlt(world, c);
         world.emit('plant', { playerId: c.id, site });
       }
     } else {
@@ -243,6 +247,7 @@ export function stepRound(world, dt) {
       if (s.defuse >= RULES.defuseTime) {
         user.acting = null;
         s.state = 'defused'; s.user = null;
+        addUlt(world, user);
         world.emit('defuse', { playerId: user.id });
         endRound(world, 'defense', 'defuse');
         return;
@@ -257,7 +262,8 @@ export function stepRound(world, dt) {
       world.emit('explode', { x: s.x, y: s.y, z: s.z });
       for (const p of world.players.values()) {
         if (!p.alive || Math.hypot(p.pos.x - s.x, p.pos.z - s.z) > RULES.blastRadius) continue;
-        p.alive = false; p.hp = 0; p.deaths++;
+        p.alive = false; p.hp = 0; p.deaths++; p.recall = null;
+        p.deathPos = { x: p.pos.x, y: p.pos.y, z: p.pos.z };
         world.emit('kill', { playerId: null, victimId: p.id, headshot: false, weapon: 'spike' });
       }
       endRound(world, 'attack', 'explode');
@@ -284,6 +290,7 @@ function canShop(world, p) {
 
 export function buy(world, p, item) {
   if (!canShop(world, p)) return false;
+  if (item.startsWith('ab:')) return buyAbility(world, p, item.slice(3)); // アビリティの回数 (売却はできない)
   const armor = RULES.armor[item], def = WEAPONS[item];
   if (!armor && !(def && (def.slot === 'primary' || def.slot === 'sidearm'))) return false;
   const slot = armor ? 'armor' : def.slot, price = armor ? armor.price : def.price;

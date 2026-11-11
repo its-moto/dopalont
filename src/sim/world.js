@@ -4,6 +4,7 @@ import { buildMap } from './map.js';
 import { stepMovement } from './movement.js';
 import { stepCombat, createLoadout } from './combat.js';
 import { initRounds, stepRound, onLeave } from './round.js';
+import { initAbilities, stepAbilities, useAbility } from './abilities.js';
 
 export const TICK = 1 / 64;
 export const RESPAWN_TIME = 3;       // respawn オプション (ラウンドなしの復活あり) 用
@@ -12,13 +13,14 @@ const HIST_STRIDE = 5;               // time, x, y, z, crouch
 const RANGE_LOADOUT = { primary: 'ar_tap', sidearm: 'pistol_basic', melee: 'knife' };
 const ROUND_LOADOUT = { sidearm: 'pistol_basic', melee: 'knife' };
 
-const NEUTRAL = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, slot: null, yaw: 0, pitch: 0, seq: 0 };
+const NEUTRAL = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, slot: null, ab: null, yaw: 0, pitch: 0, seq: 0 };
 
 /** ゲームの状態全体。描画・音・DOM に依存しない (Node でも動く) */
 export class World {
   /**
    * @param opts {{seed?:number, infiniteReserve?:boolean, targets?:boolean, respawn?:boolean, rounds?:{winsNeeded?:number}}}
    *   targets: 射撃場の的を置くか。respawn: 死んだら自動で復活するか。rounds: ラウンド制にするか
+   *   abilities: false にするとアビリティを動かさない (参加側の予測用の world。結果はホストから届く)
    */
   constructor(mapDef, opts = {}) {
     this.map = buildMap(mapDef);
@@ -44,10 +46,15 @@ export class World {
       alive: true, respawnAt: 0,
     }));
     this.events = [];
+    // アビリティで場に出る物。ents / marks の形は src/sim/abilities.js を参照
+    this.abilAuth = opts.abilities !== false;
+    this.staticBoxes = this.boxes.length; // これより後ろは氷の壁などの一時的な箱
+    this.ents = []; this.marks = []; this.entSeq = 0;
     if (opts.rounds) initRounds(this, opts.rounds);
+    this.freeAbilities = !this.round; // 射撃場では回数もポイントも減らない
   }
 
-  addPlayer(id, { x = 0, z = 0, yaw = 0, team = null, name = '', loadout } = {}) {
+  addPlayer(id, { x = 0, z = 0, yaw = 0, team = null, name = '', loadout, agent = 'gale' } = {}) {
     const ids = { ...(loadout || (this.round ? ROUND_LOADOUT : RANGE_LOADOUT)) };
     const p = {
       id, name, team,
@@ -63,6 +70,7 @@ export class World {
       lastCmd: { ...NEUTRAL, yaw }, ack: 0,
       lagComp: 0, hist: new Float32Array(HIST * HIST_STRIDE), histN: 0,
     };
+    initAbilities(p, agent);
     this.players.set(id, p);
     return p;
   }
@@ -153,24 +161,27 @@ export class World {
       }
       const list = cmds[p.id];
       const last = p.lastCmd;
-      last.reload = false; last.slot = null;
+      last.reload = false; last.slot = null; last.ab = null;
       if (list && list.length) {
-        let reload = false, slot = null;
+        let reload = false, slot = null, ab = null;
         for (let i = 0; i < list.length; i++) {
           const c = list[i];
           stepMovement(this, p, c, dt);
           if (c.reload) reload = true;
           if (c.slot) slot = c.slot;
+          if (c.ab) ab = c.ab;
           if (c.seq) p.ack = c.seq;
         }
         Object.assign(last, list[list.length - 1]);
-        last.reload = reload; last.slot = slot;
+        last.reload = reload; last.slot = slot; last.ab = ab;
       }
+      if (last.ab && this.abilAuth) useAbility(this, p, last.ab);
       stepCombat(this, p, last, dt);
 
       const i = (p.histN++ % HIST) * HIST_STRIDE, h = p.hist;
       h[i] = this.time; h[i + 1] = p.pos.x; h[i + 2] = p.pos.y; h[i + 3] = p.pos.z; h[i + 4] = p.crouch;
     }
+    if (this.abilAuth) stepAbilities(this, dt);
     if (this.roundAuth) stepRound(this, dt);
 
     for (const t of this.targets) {
