@@ -32,7 +32,8 @@ export class Hud {
       feed: $('killfeed'), death: $('death'), deathSub: $('death-sub'), board: $('scoreboard'),
       timer: $('round-timer'), label: $('round-label'), credits: $('credits'), creditsVal: $('credits-val'),
       status: $('status'), progress: $('progress'), progressLabel: $('progress-label'), progressFill: $('progress-fill'),
-      flash: $('flash'), abilities: $('abilities'),
+      flash: $('flash'), abilities: $('abilities'), lowhp: $('lowhp'), dmgdir: $('dmgdir'),
+      chips: { attack: $('chips-attack'), defense: $('chips-defense') },
       banner: $('banner'), bannerMain: $('banner-main'), bannerSub: $('banner-sub'), scope: $('scope'),
     };
     this.cache = {};
@@ -142,7 +143,50 @@ export class Hud {
 
   credits(n) {
     this.el.credits.hidden = n == null;
-    if (n != null) this.set('credits', this.el.creditsVal, n);
+    if (n == null) { this.lastCredits = null; return; }
+    // 増減を小さく浮かべる (+3000、-2900 など)
+    if (this.lastCredits != null && n !== this.lastCredits) {
+      const d = n - this.lastCredits, t = document.createElement('i');
+      t.className = d > 0 ? 'credit-pop plus' : 'credit-pop minus';
+      t.textContent = d > 0 ? `+${d}` : String(d);
+      t.addEventListener('animationend', () => t.remove());
+      this.el.credits.append(t);
+    }
+    this.lastCredits = n;
+    this.set('credits', this.el.creditsVal, n);
+  }
+
+  /** 上のバーの両脇に、各チームの生存状況を並べる。list: [{ id, team, agent, alive, me }] */
+  chips(list) {
+    const key = list.map((p) => `${p.id}${p.team}${p.alive ? 1 : 0}`).join('|');
+    if (key === this.cache.chips) return;
+    this.cache.chips = key;
+    for (const side of ['attack', 'defense']) {
+      const box = this.el.chips[side];
+      box.replaceChildren();
+      for (const p of list) {
+        if (p.team !== side) continue;
+        const a = AGENTS[p.agent], c = document.createElement('i');
+        c.className = `chip${p.alive ? '' : ' dead'}${p.me ? ' me' : ''}`;
+        c.style.setProperty('--c', a ? `#${a.color.toString(16).padStart(6, '0')}` : '#888');
+        c.textContent = a ? a.name[0] : '?';
+        box.append(c);
+      }
+    }
+  }
+
+  /** 撃たれた方向を示す。angle: 自分の正面を 0 として時計回り (ラジアン) */
+  damageFrom(angle) {
+    const d = document.createElement('i');
+    d.style.transform = `rotate(${angle}rad)`;
+    d.addEventListener('animationend', () => d.remove());
+    this.el.dmgdir.append(d);
+  }
+
+  lowHp(on) {
+    if (this.cache.lowhp === on) return;
+    this.cache.lowhp = on;
+    this.el.lowhp.classList.toggle('on', on);
   }
 
   /** 画面下の案内 (今できること) */
@@ -195,10 +239,10 @@ export class Hud {
   }
 
   /** キルログ。a/b: { name, ally } */
-  killfeed(killer, victim, headshot, mine) {
+  killfeed(killer, victim, headshot, mine, weapon = '') {
     const row = document.createElement('div');
     row.className = mine ? 'kf mine' : 'kf';
-    row.append(span(killer.ally ? 'ally' : 'enemy', killer.name), span(headshot ? 'how hs' : 'how', headshot ? 'HS ▶' : '▶'), span(victim.ally ? 'ally' : 'enemy', victim.name));
+    row.append(span(killer.ally ? 'ally' : 'enemy', killer.name), span(headshot ? 'how hs' : 'how', `${weapon}${headshot ? ' HS' : ''} ▶`), span(victim.ally ? 'ally' : 'enemy', victim.name));
     this.pushFeed(row);
   }
 
@@ -233,7 +277,7 @@ export class Hud {
       cap.textContent = `${TEAM_LABEL[team]}  ${list.reduce((s, r) => s + r.kills, 0)} キル`;
       table.append(cap);
       const head = table.insertRow();
-      for (const [t, c] of [['プレイヤー', ''], ['キル', 'n'], ['デス', 'n']]) {
+      for (const [t, c] of [['プレイヤー', ''], ['エージェント', ''], ['キル', 'n'], ['デス', 'n'], ['クレジット', 'n']]) {
         const th = document.createElement('th');
         th.textContent = t; th.className = c;
         head.append(th);
@@ -242,7 +286,8 @@ export class Hud {
         const tr = table.insertRow();
         if (r.id === myId) tr.className = 'me';
         tr.insertCell().textContent = r.name;
-        for (const v of [r.kills, r.deaths]) { const td = tr.insertCell(); td.textContent = v; td.className = 'n'; }
+        tr.insertCell().textContent = AGENTS[r.agent]?.name || '';
+        for (const v of [r.kills, r.deaths, r.credits ?? '']) { const td = tr.insertCell(); td.textContent = v; td.className = 'n'; }
       }
       box.append(table);
     }

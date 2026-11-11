@@ -14,6 +14,9 @@ const GEO = {
 };
 const GUN_MAT = new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.5, metalness: 0.6 });
 const CROUCH_SCALE = 0.7;
+// 敵の輪郭。少し大きい殻を裏面だけ描くと、体のまわりに赤い縁が出る
+const HULL_MAT = new THREE.MeshBasicMaterial({ color: 0xff3030, side: THREE.BackSide, transparent: true, opacity: 0.55, depthWrite: false });
+const ENEMY_GLOW = 0.32; // 体そのものの赤い光の強さ
 
 function nameTag(name) {
   const tex = canvasTexture(256, (ctx) => {
@@ -32,7 +35,7 @@ function nameTag(name) {
 }
 
 function build(r, ally) {
-  const body = new THREE.MeshStandardMaterial({ color: ally ? 0x25384b : 0x3b2a2f, roughness: 0.7, emissive: 0xffffff, emissiveIntensity: 0 });
+  const body = new THREE.MeshStandardMaterial({ color: ally ? 0x25384b : 0x4a2a2c, roughness: 0.7, emissive: ally ? 0xffffff : 0xff2222, emissiveIntensity: ally ? 0 : ENEMY_GLOW });
   const glow = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: ally ? 0x35c8ff : 0xff4a3c, emissiveIntensity: 2.6 });
   const g = new THREE.Group();
   const add = (parent, geo, mat, x, y, z) => {
@@ -40,6 +43,11 @@ function build(r, ally) {
     m.position.set(x, y, z);
     m.castShadow = true;
     parent.add(m);
+    if (!ally && mat === body) { // 敵の体には赤い輪郭をつける
+      const hull = new THREE.Mesh(geo, HULL_MAT);
+      hull.scale.setScalar(1.1);
+      m.add(hull);
+    }
     return m;
   };
   add(g, GEO.leg, body, -0.14, 0.425, 0); add(g, GEO.leg, body, 0.14, 0.425, 0);
@@ -55,7 +63,7 @@ function build(r, ally) {
   add(aim, GEO.gun, GUN_MAT, 0.12, 0, -0.55);
   g.add(aim);
   if (ally) g.add(nameTag(r.name));
-  return { g, aim, body, materials: [body, glow], flash: 0, shown: 0 };
+  return { g, aim, body, base: ally ? 0 : ENEMY_GLOW, materials: [body, glow], flash: 0, shown: 0 };
 }
 
 export class PlayerViews {
@@ -92,7 +100,7 @@ export class PlayerViews {
       v.g.scale.set(1, v.shown * (1 - r.crouch * (1 - CROUCH_SCALE)), 1);
       v.aim.rotation.x = r.pitch;
       v.flash = Math.max(0, v.flash - dt * 9);
-      v.body.emissiveIntensity = v.flash * 0.9;
+      v.body.emissiveIntensity = v.base + v.flash * (v.base ? 2.2 : 0.9);
     }
     for (const [id, v] of this.views) {
       if (v.seen) continue;

@@ -22,8 +22,10 @@
   <div id="hud" hidden>
     <div id="flash"></div>
     <div id="edge"></div>
+    <div id="lowhp"></div>
     <div id="hurt"></div>
-    <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+    <div id="dmgdir"></div>
+    <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
     <div id="dmg-layer"></div>
 
@@ -40,9 +42,11 @@
     </div>
 
     <div id="scorebar" hidden>
+      <span id="chips-attack" class="chips"></span>
       <span class="attack"><small>攻撃</small><b id="score-attack">0</b></span>
       <span class="mode"><b id="round-timer">0:00</b><small id="round-label"></small></span>
       <span class="defense"><b id="score-defense">0</b><small>防衛</small></span>
+      <span id="chips-defense" class="chips"></span>
     </div>
 
     <div id="topright">
@@ -110,7 +114,6 @@
         <button id="btn-leave">退出</button>
       </div>
       <div id="lobby-teams"></div>
-      <div class="agent-pick"><small>エージェント (同じチームでは重複できません)</small><div id="lobby-agents"></div><p id="lobby-agent-info" class="msg dim"></p></div>
       <p id="lobby-status" class="msg dim"></p>
       <div class="lobby-actions">
         <button id="btn-ready" class="primary">準備完了</button>
@@ -140,6 +143,34 @@
       </div>
       <div id="buy-grid"></div>
       <p id="buy-note" class="msg dim"></p>
+    </div>
+  </div>
+
+  <!-- エージェント選択 (試合開始の後) -->
+  <div id="agents" class="screen" hidden>
+    <div class="as">
+      <div class="as-left">
+        <div class="as-map"><small>マップ</small><b>ファウンドリー</b></div>
+        <div id="as-grid"></div>
+      </div>
+      <div id="as-portrait">
+        <div class="as-figure"><i class="as-head"></i><i class="as-body"></i><b id="as-letter"></b></div>
+        <p id="as-tagline"></p>
+      </div>
+      <div class="as-right">
+        <small id="as-role"></small>
+        <h2 id="as-name"></h2>
+        <div id="as-tabs"></div>
+        <div id="as-info"></div>
+      </div>
+      <div class="as-bottom">
+        <div id="as-team"></div>
+        <div class="as-lock">
+          <b id="as-timer">40</b>
+          <button id="as-lock" class="primary">決定</button>
+          <small id="as-enemy"></small>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -175,6 +206,25 @@
         <option value="subtle">控えめ</option>
         <option value="off">OFF</option>
       </select></label>
+    <label>足音の音量 <output id="volstep-out"></output>
+      <input id="volstep" type="range" min="0" max="1.5" step="0.05"></label>
+    <label>演出音の音量 <output id="volfx-out"></output>
+      <input id="volfx" type="range" min="0" max="1.5" step="0.05"></label>
+    <label>画質
+      <select id="quality">
+        <option value="high">高 (影あり・高解像度)</option>
+        <option value="mid">中 (影あり)</option>
+        <option value="low">低 (影なし・軽い)</option>
+      </select></label>
+    <label>クロスヘアの色 <input id="ch-color" type="color"></label>
+    <label>クロスヘアの長さ <output id="chlen-out"></output>
+      <input id="ch-len" type="range" min="0" max="20" step="1"></label>
+    <label>クロスヘアのすき間 <output id="chgap-out"></output>
+      <input id="ch-gap" type="range" min="0" max="16" step="1"></label>
+    <label>クロスヘアの太さ <output id="chthick-out"></output>
+      <input id="ch-thick" type="range" min="1" max="6" step="1"></label>
+    <label class="inline"><input id="ch-dot" type="checkbox"> 中心の点</label>
+    <div class="ch-preview"><div id="ch-preview" class="crosshair"><i></i><i></i><i></i><i></i><b></b></div></div>
   </div>
 
   <script type="module" src="src/main.js"></script>

@@ -4,7 +4,8 @@ import { AGENTS, AGENT_LIST } from '../data/agents.js';
 // ロビーの状態と操作。ホストだけが書き換え、全体をクライアントに配る
 
 export function createLobby(code) {
-  return { code, players: [], inGame: false, settings: { wins: 13 } };
+  // pick: エージェント選択中なら { left: 残り秒数 }
+  return { code, players: [], inGame: false, pick: null, settings: { wins: 13 } };
 }
 
 const count = (lobby, team) => lobby.players.filter((p) => p.team === team).length;
@@ -20,7 +21,7 @@ export function addPlayer(lobby, { id, name, host = false }) {
   const base = (name || 'プレイヤー').slice(0, 16);
   let unique = base, n = 2;
   while (lobby.players.some((p) => p.name === unique)) unique = `${base}${n++}`;
-  const p = { id, name: unique, team: pickTeam(lobby), ready: host, host, agent: null };
+  const p = { id, name: unique, team: pickTeam(lobby), ready: host, host, agent: null, locked: false };
   lobby.players.push(p);
   fixAgent(lobby, p);
   return p;
@@ -41,7 +42,7 @@ function fixAgent(lobby, p) {
 /** 同じチーム内では重複できない */
 export function setAgent(lobby, id, agent) {
   const p = lobby.players.find((q) => q.id === id);
-  if (!p || !AGENTS[agent] || !freeAgents(lobby, p).some((a) => a.id === agent)) return false;
+  if (!p || p.locked || !AGENTS[agent] || !freeAgents(lobby, p).some((a) => a.id === agent)) return false;
   p.agent = agent;
   return true;
 }
@@ -87,6 +88,18 @@ export function shuffle(lobby, rnd = Math.random) {
   for (const p of active) p.agent = null;
   for (const p of active) fixAgent(lobby, p);
 }
+
+export function startPick(lobby, secs) {
+  lobby.pick = { left: secs };
+  for (const p of lobby.players) p.locked = false;
+}
+
+export function setLocked(lobby, id) {
+  const p = lobby.players.find((q) => q.id === id);
+  if (p && p.team !== 'spec') p.locked = true;
+}
+
+export const allLocked = (lobby) => lobby.players.every((p) => p.locked || p.team === 'spec');
 
 export function canStart(lobby) {
   if (!count(lobby, 'attack') || !count(lobby, 'defense')) return { ok: false, reason: '両チームに 1 人以上必要です' };

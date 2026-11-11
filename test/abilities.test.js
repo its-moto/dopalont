@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { World, TICK } from '../src/sim/world.js';
 import { FOUNDRY } from './fixture-map.js';
-import { startRound, buy } from '../src/sim/round.js';
+import { startRound, buy, sell } from '../src/sim/round.js';
 import { AGENTS, AGENT_LIST, ABILITY_KEYS } from '../src/data/agents.js';
 import { WEAPONS } from '../src/data/weapons.js';
 import { RULES } from '../src/data/rules.js';
@@ -57,6 +57,10 @@ const ents = (w, kind) => w.ents.filter((e) => e.kind === kind);
   assert.equal(buy(w, p, 'ab:c'), false, '持てる数まで');
   assert.equal(p.abil.c, 2); assert.equal(p.credits, 800 - 400);
   assert.equal(buy(w, p, 'ab:x'), false, 'アルティメットは買えない');
+  assert.equal(sell(w, p, 'ab:c'), true, 'このラウンドに買った分は売れる');
+  assert.equal(p.abil.c, 1); assert.equal(p.credits, 800 - 200);
+  assert.equal(sell(w, p, 'ab:e'), false, '無料でもらった分は売れない');
+  assert.equal(buy(w, p, 'ab:c'), true);
   w.step(TICK, { p: [{ ...base, ab: 'c' }] });
   assert.equal(p.abil.c, 2, '購入フェーズ中は使えない');
 }

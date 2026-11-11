@@ -102,23 +102,6 @@ export class LobbyUI {
       box.append(col);
     }
 
-    // エージェント選択
-    const agents = $('lobby-agents');
-    agents.replaceChildren();
-    const mates = new Set(lobby.players.filter((p) => me && p !== me && p.team === me.team && me.team !== 'spec').map((p) => p.agent));
-    for (const a of AGENT_LIST) {
-      const b = el('button', me && me.agent === a.id ? 'agent selected' : 'agent');
-      b.style.setProperty('--c', `#${a.color.toString(16).padStart(6, '0')}`);
-      b.append(el('span', null, a.name), el('small', null, mates.has(a.id) ? '味方が使用中' : a.role));
-      b.disabled = !me || me.team === 'spec' || mates.has(a.id) || lobby.inGame;
-      b.addEventListener('click', () => room.act({ type: 'agent', agent: a.id }));
-      agents.append(b);
-    }
-    const mine = me && AGENTS[me.agent];
-    $('lobby-agent-info').textContent = mine && me.team !== 'spec'
-      ? `${mine.name}: ${mine.tagline}　／　${['c', 'q', 'e', 'x'].map((k) => `${k.toUpperCase()} ${mine.abilities[k].name}`).join('　')}`
-      : '';
-
     // 下のボタン
     $('btn-ready').hidden = host || !me || me.team === 'spec';
     if (me) $('btn-ready').textContent = me.ready ? '準備を取り消す' : '準備完了';
@@ -127,7 +110,7 @@ export class LobbyUI {
     $('lobby-wins').disabled = !host;
     const st = canStart(lobby);
     $('btn-start').disabled = !st.ok;
-    $('btn-start').textContent = st.ok && st.waiting ? `試合開始 (${st.waiting} 人が準備中)` : '試合開始';
+    $('btn-start').textContent = st.ok && st.waiting ? `エージェント選択へ (${st.waiting} 人が準備中)` : 'エージェント選択へ';
     $('lobby-status').textContent = host
       ? (st.ok ? '参加コードを友だちに伝えてください。全員そろったら開始できます' : st.reason)
       : 'ホストが試合を開始するのを待っています';

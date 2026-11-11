@@ -114,16 +114,31 @@ export class Sfx {
     e.tone({ t, type: 'triangle', f0: f * 0.3, f1: f * 0.18, dur: 0.04, gain: gain * 0.6, dest });
   }
 
-  reload(dur) {
+  /** kind: 武器の音の種類。ショットガンは弾を 1 発ずつ込める音、スナイパーは重いボルト */
+  reload(dur, kind = 'rifle') {
     if (!this.ok) return;
     this.cancelReload();
+    if (kind === 'shotgun') {
+      const e = this.e, t = e.now, g = (this.reloadGain = e.ctx.createGain());
+      g.connect(e.buses.weapon);
+      const n = Math.max(2, Math.round(dur / 0.45));
+      for (let i = 0; i < n; i++) { // 1 発ずつ押し込む
+        const tt = t + 0.15 + (i * (dur - 0.5)) / n;
+        this.click(tt, 1500, 0.3, g);
+        e.tone({ t: tt, f0: 220, f1: 140, dur: 0.06, gain: 0.2, dest: g });
+      }
+      this.click(t + dur - 0.22, 2600, 0.36, g); this.click(t + dur - 0.1, 2000, 0.4, g); // 最後にポンプを引く
+      return;
+    }
+    const light = kind === 'pistol' || kind === 'silenced' || kind === 'heavyPistol';
+    const heavy = kind === 'sniper' || kind === 'mg';
     const e = this.e, t = e.now;
     const g = (this.reloadGain = e.ctx.createGain());
     g.connect(e.buses.weapon);
-    this.click(t + dur * 0.2, 2400, 0.3, g);                 // マガジンを抜く
+    this.click(t + dur * 0.2, light ? 3000 : heavy ? 1800 : 2400, 0.3, g);                 // マガジンを抜く
     e.noise({ t: t + dur * 0.22, f: 900, q: 0.8, dur: 0.12, gain: 0.08, dest: g });
     this.click(t + dur * 0.62, 1700, 0.38, g);                // 差し込む
-    e.tone({ t: t + dur * 0.62, f0: 260, f1: 120, dur: 0.07, gain: 0.25, dest: g });
+    e.tone({ t: t + dur * 0.62, f0: heavy ? 180 : 260, f1: heavy ? 80 : 120, dur: heavy ? 0.12 : 0.07, gain: light ? 0.15 : 0.3, dest: g });
     this.click(t + dur * 0.84, 3200, 0.3, g);                 // ボルトを引く
     this.click(t + dur * 0.84 + 0.07, 2700, 0.34, g);
   }
@@ -183,6 +198,43 @@ export class Sfx {
     const e = this.e, t = e.now, s = STEPS[mat] || STEPS.concrete;
     e.tone({ t, f0: 130, f1: 42, dur: 0.14, gain: 0.5, dest: e.buses.step });
     e.noise({ t, f: s.f * 0.7, q: 0.8, dur: 0.11, gain: 0.3, dest: e.buses.step });
+  }
+
+  /** スナイパーの撃った後のボルト操作 */
+  bolt() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now + 0.32;
+    this.click(t, 2200, 0.3, e.buses.weapon); this.click(t + 0.16, 1500, 0.34, e.buses.weapon);
+    e.tone({ t: t + 0.16, f0: 200, f1: 110, dur: 0.07, gain: 0.25, dest: e.buses.weapon });
+  }
+
+  // ---- 画面の操作音と合図 ----
+  uiClick() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, type: 'triangle', f0: 1200, f1: 900, dur: 0.05, gain: 0.14, dest: e.buses.ui });
+  }
+
+  uiLock() {
+    if (!this.ok) return;
+    const t = this.e.now;
+    this.arp(t, [523, 784, 1047], 0.07, 0.14);
+    this.kyuin(t + 0.12, 1.2, 0.16);
+  }
+
+  /** 残り時間が少ない時のカウント音。last: 最後の 1 回 */
+  uiTick(last = false) {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, type: 'square', f0: last ? 1320 : 880, dur: last ? 0.25 : 0.07, gain: 0.12, dest: e.buses.ui });
+  }
+
+  /** 体力が少ない時の鼓動 */
+  heartbeat() {
+    if (!this.ok) return;
+    const e = this.e, t = e.now;
+    e.tone({ t, f0: 70, f1: 42, dur: 0.14, gain: 0.5, dest: e.buses.world });
+    e.tone({ t: t + 0.2, f0: 62, f1: 38, dur: 0.16, gain: 0.38, dest: e.buses.world });
   }
 
   // ---- アビリティ ----

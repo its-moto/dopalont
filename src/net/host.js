@@ -9,6 +9,7 @@ import { startRound, joinRound, buy, sell } from '../sim/round.js';
 import { RULES } from '../data/rules.js';
 
 const MAX_PLAYERS = 12; // 5v5 + 観戦 2
+const PICK_TIME = 40;   // エージェント選択の制限時間 (秒)
 const PITCH_LIMIT = 1.56;
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
@@ -87,17 +88,38 @@ export class HostRoom extends Emitter {
 
   apply(id, a) {
     if (!a || this.lobby.inGame) return;
-    if (a.type === 'team') L.setTeam(this.lobby, id, a.team);
-    else if (a.type === 'agent') L.setAgent(this.lobby, id, a.agent);
+    if (this.lobby.pick) { // エージェント選択中は、選ぶことと決定だけ
+      if (a.type === 'agent') L.setAgent(this.lobby, id, a.agent);
+      else if (a.type === 'lock') { L.setLocked(this.lobby, id); if (L.allLocked(this.lobby)) this.lobby.pick.left = Math.min(this.lobby.pick.left, 2); }
+      else return;
+    } else if (a.type === 'team') L.setTeam(this.lobby, id, a.team);
     else if (a.type === 'ready') L.setReady(this.lobby, id, a.ready);
     else return;
     this.lobbyChanged();
   }
 
+  /** エージェント選択を始める。全員が決定するか時間が切れたら 'pickDone' を出す */
+  startPick(secs = PICK_TIME) {
+    if (this.lobby.pick || this.lobby.inGame) return;
+    L.startPick(this.lobby, secs);
+    this.lobbyChanged();
+    this.pickTimer = setInterval(() => {
+      const pick = this.lobby.pick;
+      if (!pick) { clearInterval(this.pickTimer); return; }
+      if (--pick.left <= 0) {
+        clearInterval(this.pickTimer);
+        this.lobby.pick = null;
+        this.emit('pickDone');
+      } else {
+        this.lobbyChanged();
+      }
+    }, 1000);
+  }
+
   /** ホストだけができる操作 */
   hostAct(a) {
     if (a.type === 'kick') { this.kick(a.id); return; }
-    if (this.lobby.inGame) return;
+    if (this.lobby.inGame || this.lobby.pick) return;
     if (a.type === 'move') L.setTeam(this.lobby, a.id, a.team);
     else if (a.type === 'balance') L.autoBalance(this.lobby);
     else if (a.type === 'shuffle') L.shuffle(this.lobby);
@@ -147,6 +169,7 @@ export class HostRoom extends Emitter {
 
   close() {
     clearInterval(this.pingTimer);
+    clearInterval(this.pickTimer);
     this.peer.destroy();
   }
 }

@@ -83,6 +83,7 @@ export class BuyMenu {
         btn.append(el('span', 'iname', `${k.toUpperCase()} ${d.name}`), el('span', 'iprice', String(d.price)), note);
         btn.title = d.desc;
         btn.addEventListener('click', () => this.order(`ab:${k}`, d.price));
+        btn.addEventListener('contextmenu', (e) => { e.preventDefault(); this.session?.sell(`ab:${k}`); });
         this.abilCol.append(btn);
         this.abilItems.push({ btn, note, key: k, def: d });
       }

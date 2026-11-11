@@ -12,11 +12,12 @@ import { normalizeCode } from './net/peer.js';
 import { NET } from './net/config.js';
 import { LobbyUI } from './ui/lobby.js';
 import { BuyMenu } from './ui/buymenu.js';
+import { AgentSelectUI } from './ui/agentselect.js';
 import { Game } from './game.js';
 import { AGENTS, AGENT_LIST } from './data/agents.js';
 
 const $ = (id) => document.getElementById(id);
-const SCREENS = ['title', 'lobby', 'loading', 'pause'];
+const SCREENS = ['title', 'lobby', 'agents', 'loading', 'pause'];
 const settings = loadSettings();
 const audio = new AudioEngine();
 audio.volume = settings.volume;
@@ -26,6 +27,7 @@ const canvas = $('view');
 input.attach(canvas);
 
 const buyMenu = new BuyMenu();
+const agentUI = new AgentSelectUI(sfx);
 let game = null;     // 進行中の試合 (表示側)
 let room = null;     // 接続中の部屋 (HostRoom か ClientRoom)
 let gfx = null;      // レンダラーと素材。最初の試合で 1 回だけ作る
@@ -60,6 +62,7 @@ async function startGame(makeSession) {
   window.__game = game; // デバッグ用
   game.start();
   lobbyUI.close();
+  agentUI.close();
   $('btn-end').hidden = !(room && room.isHost);
   show('pause');
   input.lock();
@@ -73,8 +76,20 @@ function stopGame() {
 
 function toLobby() {
   stopGame();
-  show('lobby');
-  lobbyUI.open(room);
+  showLobby();
+}
+
+/** ロビーか、エージェント選択か (部屋の状態に合わせて出す) */
+function showLobby() {
+  if (!room || game) return;
+  if (room.lobby.pick) {
+    lobbyUI.close();
+    show('agents');
+    agentUI.open(room);
+  } else {
+    agentUI.close();
+    if ($('lobby').hidden) { show('lobby'); lobbyUI.open(room); } else lobbyUI.render();
+  }
 }
 
 function toTitle(message = '') {
@@ -82,12 +97,13 @@ function toTitle(message = '') {
   room?.close();
   room = null;
   lobbyUI.close();
+  agentUI.close();
   show('title');
   titleMsg(message);
 }
 
 const lobbyUI = new LobbyUI({
-  onStart: () => startGame(() => room.startGame(FOUNDRY)),
+  onStart: () => { sfx.uiClick(); room.startPick(); }, // まずエージェント選択へ。全員が決めたら試合が始まる
   onLeave: () => toTitle(),
 });
 
@@ -101,7 +117,8 @@ async function connect(make, busyText) {
   titleMsg(busyText);
   try {
     room = await make();
-    room.on('lobby', () => lobbyUI.render());
+    room.on('lobby', showLobby);
+    room.on('pickDone', () => startGame(() => room.startGame(FOUNDRY)));
     titleMsg('');
     toLobby();
     return true;
@@ -165,6 +182,30 @@ const bind = (id, outId, key, fmt, apply) => {
 bind('sens', 'sens-out', 'sens', (v) => v.toFixed(2));
 bind('vol', 'vol-out', 'volume', (v) => `${Math.round(v * 100)}%`, (v) => audio.setVolume(v));
 bind('fx', null, 'fx');
+bind('volstep', 'volstep-out', 'volStep', (v) => `${Math.round(v * 100)}%`, (v) => audio.setBus('step', v));
+bind('volfx', 'volfx-out', 'volFx', (v) => `${Math.round(v * 100)}%`, (v) => audio.setBus('ui', v));
+bind('quality', null, 'quality', null, (v) => game?.setQuality(v));
+audio.setBus('step', settings.volStep);
+audio.setBus('ui', settings.volFx);
+
+// クロスヘア: 設定を CSS の変数に流す (ゲーム中の表示と、設定の見本の両方)
+function applyCrosshair() {
+  for (const id of ['crosshair', 'ch-preview']) {
+    const st = $(id).style;
+    st.setProperty('--c', settings.chColor);
+    st.setProperty('--len', `${settings.chLen}px`);
+    st.setProperty('--gap', `${settings.chGap}px`);
+    st.setProperty('--th', `${settings.chThick}px`);
+    st.setProperty('--dot', settings.chDot ? 'block' : 'none');
+  }
+}
+bind('ch-color', null, 'chColor', null, applyCrosshair);
+bind('ch-len', 'chlen-out', 'chLen', (v) => `${v}`, applyCrosshair);
+bind('ch-gap', 'chgap-out', 'chGap', (v) => `${v}`, applyCrosshair);
+bind('ch-thick', 'chthick-out', 'chThick', (v) => `${v}`, applyCrosshair);
+$('ch-dot').checked = settings.chDot;
+$('ch-dot').addEventListener('change', (e) => { settings.chDot = e.target.checked; applyCrosshair(); saveSettings(settings); });
+applyCrosshair();
 
 $('btn-fullscreen').addEventListener('click', async () => {
   try {

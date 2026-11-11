@@ -3,6 +3,7 @@ import { lerp } from './core/math.js';
 import { eyeHeight } from './sim/movement.js';
 import { WEAPONS } from './data/weapons.js';
 import { blocked } from './sim/combat.js';
+import { areaAt } from './sim/map.js';
 import { RULES, REASON_TEXT } from './data/rules.js';
 import { TEAM_LABEL } from './net/config.js';
 import { createScene, BASE_FOV } from './render/scene.js';
@@ -62,8 +63,8 @@ export class Game {
     this.net = session.mode === 'net';
     this.myTeam = session.roster.get(session.myId)?.team ?? null;
 
-    const { scene, camera } = createScene(world.map.size);
-    this.scene = scene; this.camera = camera;
+    const { scene, camera, sun } = createScene(world.map.size);
+    this.scene = scene; this.camera = camera; this.sun = sun;
     this.mapGroup = buildMapMeshes(world.map, materials);
     scene.add(this.mapGroup);
     this.targets = new TargetViews(scene, world);
@@ -93,7 +94,7 @@ export class Game {
     this.steps = new Map(); // 他プレイヤーの足音用: ID → 前回位置と歩いた距離
     this.buyOpen = false;
     this.specIdx = 0; this.prevClick = false;
-    this.beepT = 0; this.workT = 0;
+    this.beepT = 0; this.workT = 0; this.heartT = 0; this.roofT = 0; this.lastSec = -1; this.chipT = 0;
 
     // ホストのタブが裏に回ると描画ループが止まり、全員のゲームが固まってしまう
     // 裏にいる間は Worker のタイマー (ブラウザに間引かれない) で sim だけ進める
@@ -134,6 +135,8 @@ export class Game {
 
   start() {
     this.running = true;
+    this.setQuality(this.settings.quality);
+    this.audio.ambient(true);
     this.hud.show(true);
     this.last = performance.now();
     const loop = (now) => {
@@ -147,12 +150,21 @@ export class Game {
   dispose() {
     this.running = false;
     this.audio.occluded = null;
+    this.audio.ambient(false);
     this.ticker?.terminate();
     this.closeBuy(false, true);
     this.hud.show(false);
     window.removeEventListener('resize', this.onResize);
     this.mapGroup.traverse((o) => o.geometry?.dispose());
     this.renderer.clear();
+  }
+
+  /** 画質。low は影なし・解像度控えめ、mid は等倍、high は高解像度 */
+  setQuality(q) {
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(q === 'low' ? Math.min(dpr, 1) * 0.8 : q === 'mid' ? Math.min(dpr, 1) : Math.min(dpr, 2));
+    this.sun.castShadow = q !== 'low';
+    this.resize();
   }
 
   // ---- 購入メニュー ----
@@ -263,6 +275,17 @@ export class Game {
 
     // ---- HUD ----
     this.hud.update(dt, p, world, this.stats);
+    // 体力が少ない時: 画面の縁が赤く脈打ち、鼓動が聞こえる
+    const low = alive && p.hp <= 30;
+    this.hud.lowHp(low);
+    if (low) { this.heartT -= dt; if (this.heartT <= 0) { this.heartT = 0.95; this.sfx.heartbeat(); } } else this.heartT = 0;
+    // 屋根の下では反響を強める
+    this.roofT -= dt;
+    if (this.roofT <= 0) {
+      this.roofT = 0.3;
+      const name = areaAt(world.map, cam.position.x, cam.position.z);
+      this.audio.setIndoor(!!world.map.areas.find((a) => a.name === name)?.roof);
+    }
     this.hud.scope(scoped);
     this.hud.abilities(alive ? p : null, world.freeAbilities);
     // 閃光: 真っ白になり、終わりぎわに戻ってくる
@@ -291,6 +314,21 @@ export class Game {
     if (alive) { if (p.team === 'attack') aAlive++; else dAlive++; }
     hud.round(r, aAlive, dAlive);
     hud.credits(p ? p.credits : null);
+    // 生存状況の一覧 (上のバーの両脇)
+    this.chipT -= dt;
+    if (this.chipT <= 0) {
+      this.chipT = 0.2;
+      const list = [];
+      for (const m of remotes) { const info = this.session.roster.get(m.id); list.push({ id: m.id, team: m.team, agent: info?.agent, alive: m.alive, me: false }); }
+      if (p) list.push({ id: myId, team: p.team, agent: p.agent, alive, me: true });
+      hud.chips(list);
+    }
+    // 残り時間が少ない時のカウント音 (購入フェーズの最後 5 秒、戦闘の最後 10 秒)
+    const sec = Math.ceil(r.timer);
+    if (sec !== this.lastSec) {
+      this.lastSec = sec;
+      if ((r.phase === 'buy' && sec <= 5 && sec > 0) || (r.phase === 'live' && sec <= 10 && sec > 0)) this.sfx.uiTick(sec === 1);
+    }
 
     // 設置されたスパイクと警告音
     const g = this.spike.g, onGround = s.state === 'planted' || s.state === 'dropped';
@@ -418,6 +456,7 @@ export class Game {
           this.stats.shots++;
           vm.onShot(def);
           sfx.gunshot(def.sound);
+          if (def.sound === 'sniper') sfx.bolt();
           if (!def.melee) fx.muzzleLight(this.camera.position);
           from = this.muzzleWorld();
         } else {
@@ -441,11 +480,19 @@ export class Game {
           hud.damageNumber(e.point, e.damage, e.part, this.camera);
           sfx.hit(e.part);
         }
-        if (e.victimId === myId) { hud.hurt(); sfx.hurt(); }
+        if (e.victimId === myId) {
+          hud.hurt(); sfx.hurt();
+          // 撃ってきた相手の方向を示す
+          const from = session.remotes.find((m) => m.id === e.playerId);
+          if (from) {
+            const c = this.camera.position;
+            hud.damageFrom(Math.atan2(from.x - c.x, -(from.z - c.z)) + this.input.yaw);
+          }
+        }
         break;
       case 'kill':
         this.targets.onKill(e.victimId);
-        if (this.net) hud.killfeed(this.label(e.playerId), this.label(e.victimId), e.headshot, mine);
+        if (this.net) hud.killfeed(this.label(e.playerId), this.label(e.victimId), e.headshot, mine, WEAPONS[e.weapon]?.name || (e.weapon === 'ability' ? 'アビリティ' : ''));
         if (mine) {
           this.stats.kills++;
           if (e.headshot) this.stats.hs++;
@@ -507,7 +554,7 @@ export class Game {
       }
 
       // ---- ここから下は自分のぶんだけ鳴らす ----
-      case 'reloadStart': if (mine) { vm.onReload(e.dur); sfx.reload(e.dur); } break;
+      case 'reloadStart': if (mine) { vm.onReload(e.dur); sfx.reload(e.dur, WEAPONS[e.weapon].sound); } break;
       case 'equip': if (mine) { sfx.cancelReload(); sfx.equip(); } break;
       case 'dry': if (mine) sfx.dry(); break;
       case 'footstep': if (mine) sfx.footstep(e.mat); break;

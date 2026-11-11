@@ -1,7 +1,7 @@
 import { RULES } from '../data/rules.js';
 import { WEAPONS } from '../data/weapons.js';
 import { createLoadout } from './combat.js';
-import { roundAbilities, buyAbility, addUlt } from './abilities.js';
+import { roundAbilities, buyAbility, sellAbility, addUlt } from './abilities.js';
 
 // ラウンドの進行・スパイク・経済・購入 (DESIGN.md §4)。ホストの sim だけが動かす
 //
@@ -290,7 +290,7 @@ function canShop(world, p) {
 
 export function buy(world, p, item) {
   if (!canShop(world, p)) return false;
-  if (item.startsWith('ab:')) return buyAbility(world, p, item.slice(3)); // アビリティの回数 (売却はできない)
+  if (item.startsWith('ab:')) return buyAbility(world, p, item.slice(3)); // アビリティの回数
   const armor = RULES.armor[item], def = WEAPONS[item];
   if (!armor && !(def && (def.slot === 'primary' || def.slot === 'sidearm'))) return false;
   const slot = armor ? 'armor' : def.slot, price = armor ? armor.price : def.price;
@@ -311,6 +311,7 @@ export function buy(world, p, item) {
 
 export function sell(world, p, slot) {
   if (!canShop(world, p)) return false;
+  if (slot.startsWith('ab:')) return sellAbility(world, p, slot.slice(3));
   const old = p.bought[slot];
   if (!old) return false;
   p.credits += old.price;

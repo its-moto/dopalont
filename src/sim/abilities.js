@@ -110,6 +110,19 @@ export function buyAbility(world, p, key) {
   if (!def || !def.price || p.abil[key] >= def.max || p.credits < def.price) return false;
   p.credits -= def.price;
   p.abil[key]++;
+  p.bought['ab:' + key] = (p.bought['ab:' + key] || 0) + 1; // このラウンドに買った数。売却で全額戻る
+  emitAbil(world, p);
+  emitInv(world, p);
+  return true;
+}
+
+/** このラウンドに買ったアビリティを 1 回ぶん売る */
+export function sellAbility(world, p, key) {
+  const def = defsOf(p)[key], n = p.bought['ab:' + key] || 0;
+  if (!def || n <= 0 || p.abil[key] <= 0) return false;
+  p.bought['ab:' + key] = n - 1;
+  p.abil[key]--;
+  p.credits += def.price;
   emitAbil(world, p);
   emitInv(world, p);
   return true;
