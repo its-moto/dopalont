@@ -229,14 +229,6 @@ export class Sfx {
     e.tone({ t, type: 'square', f0: last ? 1320 : 880, dur: last ? 0.25 : 0.07, gain: 0.12, dest: e.buses.ui });
   }
 
-  /** 体力が少ない時の鼓動 */
-  heartbeat() {
-    if (!this.ok) return;
-    const e = this.e, t = e.now;
-    e.tone({ t, f0: 70, f1: 42, dur: 0.14, gain: 0.5, dest: e.buses.world });
-    e.tone({ t: t + 0.2, f0: 62, f1: 38, dur: 0.16, gain: 0.38, dest: e.buses.world });
-  }
-
   // ---- アビリティ ----
   /** 発動した瞬間の音。at が null なら自分 */
   ability(kind, key, at) {

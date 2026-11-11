@@ -225,6 +225,7 @@ button.item { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text
 .abil i { font-style: normal; font-size: 14px; font-weight: 700; }
 .abil.ready { opacity: 1; border-bottom-color: var(--ally); }
 .abil.ready b { color: #fff; }
+.abil.armed { background: rgba(255, 210, 63, 0.3); border-bottom-color: var(--accent2); transform: translateY(-6px); }
 .abil.ult.ready { border-bottom-color: var(--accent2); box-shadow: 0 0 14px rgba(255, 210, 63, 0.5); }
 .abil.ult.ready i { color: var(--accent2); }
 @media (max-width: 900px) { .abil { min-width: 0; } .abil span { display: none; } }

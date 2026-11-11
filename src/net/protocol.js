@@ -4,7 +4,7 @@
 //   hello  { name, v }                 接続直後のあいさつ
 //   act    { a: { type, ... } }        ロビー操作: team{team} / ready{ready}
 //   buy    { item } / sell { slot }    購入フェーズ中の買い物
-//   in     { c: [cmd, ...] }           入力。cmd は sim に渡す入力 + seq (通し番号)
+//   in     { c: [cmd, ...] }           入力。cmd は sim に渡す入力 + seq (通し番号)。ab = アビリティのキー、drop = G キー
 //   pong   { ts }
 //
 // ホスト → クライアント
@@ -26,7 +26,7 @@ export const NET_EVENTS = new Set([
   'shot', 'hit', 'kill', 'respawn', 'join', 'left',
   'inv', 'roundStart', 'roundEnd', 'matchEnd', 'phase',
   'plantStart', 'plant', 'defuseStart', 'defuse', 'explode', 'spikeDrop', 'spikePickup',
-  'abil', 'ability', 'effect', 'flashed', 'ultReady',
+  'abil', 'ability', 'effect', 'flashed', 'ultReady', 'drop', 'pickup',
 ]);
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
@@ -36,12 +36,12 @@ const r1 = (v) => Math.round(v * 10) / 10;
 export function packEnts(world) {
   const out = [];
   for (const list of [world.ents, world.marks]) {
-    for (const e of list) out.push([e.id, e.kind, r3(e.x), r3(e.y), r3(e.z), r3(e.r), r3(e.x2), r3(e.z2), e.team, e.owner]);
+    for (const e of list) out.push([e.id, e.kind, r3(e.x), r3(e.y), r3(e.z), r3(e.r), r3(e.x2), r3(e.z2), e.team, e.owner, e.w || null]);
   }
   return out;
 }
 
-export const unpackEnt = (a) => ({ id: a[0], kind: a[1], x: a[2], y: a[3], z: a[4], r: a[5], x2: a[6], z2: a[7], team: a[8], owner: a[9] });
+export const unpackEnt = (a) => ({ id: a[0], kind: a[1], x: a[2], y: a[3], z: a[4], r: a[5], x2: a[6], z2: a[7], team: a[8], owner: a[9], w: a[10] }); // w: 落ちている武器の ID
 
 /** ラウンドの状態 (src/sim/round.js の world.round) を配列に詰める */
 export function packRound(r) {

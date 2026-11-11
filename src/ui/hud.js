@@ -67,7 +67,7 @@ export class Hud {
       else { ready = p.abil[k] > 0; text = `× ${p.abil[k]}`; }
       this.set('an' + k, c.name, def.name);
       this.set('ac' + k, c.count, text);
-      const cls = `abil${ready ? ' ready' : ''}${k === 'x' ? ' ult' : ''}`;
+      const cls = `abil${ready ? ' ready' : ''}${k === 'x' ? ' ult' : ''}${p.armed === k ? ' armed' : ''}`;
       if (c.cell.className !== cls) c.cell.className = cls;
     }
   }

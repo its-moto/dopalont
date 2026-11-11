@@ -35,6 +35,12 @@ function setup(agents) {
       w.step(TICK, out);
       events.push(...w.drainEvents());
       for (const id in out) out[id][0].ab = null; // 押した瞬間だけ
+      if (i > 0 || cmds.noClick) continue;
+      // 狙いをつけるアビリティは「構え」になるので、続けて左クリックして発動させる
+      for (const id in cmds) {
+        if (!cmds[id].ab || !w.players.get(id)?.armed) continue;
+        for (const fire of [true, !!cmds[id].fire]) { out[id][0].fire = fire; w.step(TICK, out); events.push(...w.drainEvents()); }
+      }
     }
   };
   const place = (p, x, z, yaw = 0, y = 0) => { p.pos.x = x; p.pos.y = y; p.pos.z = z; p.vel.x = p.vel.y = p.vel.z = 0; p.yaw = yaw; p.pitch = 0; p.histN = 0; };
@@ -119,15 +125,43 @@ const ents = (w, kind) => w.ents.filter((e) => e.kind === kind);
   step(8);
   assert.equal(ents(w, 'firewall').length, 0);
 
-  // 閃光: 見ている人だけ目がくらむ。背を向けていれば平気
-  // 閃光は約 11m 先 (z≈1) で炸裂する。d1 はその先からこちらを向いている
-  t.place(a1, 4, 12); t.place(d1, 4, -4, Math.PI); t.place(a2, 8, 13, Math.PI);
+  // 閃光は二段階: Q で構え → 左クリックで左へ、右クリックで右へ曲がって飛ぶ
+  const flashAt = () => t.events.filter((e) => e.type === 'effect' && e.kind === 'flash').pop();
+  t.place(a1, 4, 12); t.place(d1, 10, -6, Math.PI); t.place(a2, 8, 13, Math.PI);
+  step(0.1); t.events.length = 0;
+  step(TICK, { a1: { ab: 'q' }, noClick: true });
+  assert.equal(a1.armed, 'q', 'まず構える'); assert.equal(a1.abil.q, 2, '構えただけでは減らない');
+  assert.equal(ents(w, 'proj').length, 0);
+  step(TICK, { a1: { fire: true } }); step(TICK);
+  assert.equal(a1.armed, null); assert.equal(a1.abil.q, 1);
+  assert.equal(t.got('shot').length, 0, '発動のクリックで銃は撃たない');
+  step(0.9);
+  const left = flashAt();
+  assert.ok(left && left.x < 3, `左クリックは左 (西) へ曲がる (x=${left?.x.toFixed(1)})`);
+  step(TICK, { a1: { ab: 'q' }, noClick: true });
+  step(TICK, { a1: { alt: true } }); step(TICK);
+  step(0.9);
+  const right = flashAt();
+  assert.ok(right.x > 5, `右クリックは右 (東) へ曲がる (x=${right.x.toFixed(1)})`);
+  assert.equal(a1.abil.q, 0);
+
+  // 構えは取り消せる: もう一度キーを押す / 武器を持ち替える。回数は減らない
+  a1.abil.q = 1;
+  step(TICK, { a1: { ab: 'q' }, noClick: true }); assert.equal(a1.armed, 'q');
+  step(TICK, { a1: { ab: 'q' }, noClick: true }); assert.equal(a1.armed, null, '同じキーで取り消し');
+  step(TICK, { a1: { ab: 'q' }, noClick: true });
+  step(TICK, { a1: { slot: 'melee' } }); assert.equal(a1.armed, null, '持ち替えで取り消し');
+  assert.equal(a1.abil.q, 1);
+  step(TICK, { a1: { slot: 'sidearm' } }); step(1);
+
+  // 見ている人だけ目がくらむ。背を向けていれば平気 (炸裂する場所 left の北と南に立たせる)
+  t.place(d1, left.x, left.z - 4, Math.PI);  // 北側から南 (閃光の方) を向く
+  t.place(a2, left.x, left.z + 4, Math.PI);  // 南側で南を向く = 閃光に背を向ける
   step(0.1); t.events.length = 0;
   step(TICK, { a1: { ab: 'q' } });
-  step(0.8);
+  step(0.9);
   const fl = t.got('flashed').map((e) => e.victimId);
   assert.ok(fl.includes('d1'), '閃光の方を向いている敵は目がくらむ');
-  assert.ok(fl.includes('a1'), '投げた本人も見ていればくらむ');
   assert.ok(!fl.includes('a2'), '背を向けていれば平気');
 
   // 火炎瓶: 足元に投げる
@@ -256,7 +290,9 @@ const ents = (w, kind) => w.ents.filter((e) => e.kind === kind);
 // ---- 設置でポイント、ラウンドが変わると場の物は消える ----
 {
   const t = setup({ a1: 'mend' }), { w, a1, d1, step } = t;
+  t.place(a1, w.round.spike.x, w.round.spike.z); step(TICK * 2); // 床のスパイクを拾う
   const c = w.players.get(w.round.spike.carrier);
+  assert.equal(c, a1);
   t.place(c, -40, -8);
   step(RULES.plantTime + 0.1, { [c.id]: { use: true } });
   assert.equal(c.ult, 1, '設置で 1 ポイント');

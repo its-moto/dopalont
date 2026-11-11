@@ -18,14 +18,27 @@ const step = (secs, cmds = {}) => {
 };
 const got = (type) => events.some((e) => e.type === type);
 const place = (p, x, z, y = 0) => { p.pos.x = x; p.pos.y = y; p.pos.z = z; p.vel.x = p.vel.y = p.vel.z = 0; };
-const carrier = () => w.players.get(r.spike.carrier);
+/** スパイクを持っている人。まだ床にあれば、攻撃側の 1 人に拾わせる */
+const carrier = () => {
+  if (!r.spike.carrier) {
+    const p = [...w.players.values()].find((q) => q.team === 'attack' && q.alive);
+    place(p, r.spike.x, r.spike.z);
+    step(TICK * 2);
+  }
+  return w.players.get(r.spike.carrier);
+};
 
 // ---- ラウンド 1: 購入フェーズ ----
 startRound(w);
 assert.equal(r.phase, 'buy'); assert.equal(r.timer, RULES.buyTimeFirst);
 assert.equal(a1.credits, 800);
 assert.equal(a1.slot, 'sidearm'); assert.ok(!a1.weapons.primary, '最初はピストルとナイフだけ');
-assert.ok(['a1', 'a2'].includes(r.spike.carrier), '攻撃側の誰かがスパイクを持つ');
+assert.equal(r.spike.state, 'dropped', 'スパイクは最初、床に落ちている');
+assert.ok(r.spike.z > 44 && r.spike.z < 58, '攻撃スポーンの中にある');
+place(d1, r.spike.x, r.spike.z); step(TICK * 2);
+assert.equal(r.spike.carrier, null, '防衛側は拾えない');
+w.spawn(d1);
+assert.ok(['a1', 'a2'].includes(carrier().id), '攻撃側が上を通ると拾う (購入フェーズ中でも)');
 
 assert.equal(buy(w, a1, 'ar_tap'), false, 'お金が足りない');
 assert.equal(buy(w, a1, 'pistol_heavy'), true);
@@ -108,7 +121,7 @@ assert.equal(r.number, 3); assert.equal(r.half, 2);
 assert.equal(a1.team, 'defense'); assert.equal(d1.team, 'attack');
 assert.equal(a1.credits, 800, '後半の最初は 800 に戻る');
 assert.ok(!a2.weapons.primary, '武器もリセット');
-assert.equal(r.spike.carrier, 'd1');
+assert.equal(carrier().id, 'd1');
 assert.ok(d1.pos.z > 40, '攻撃側のスポーンに出る');
 step(RULES.buyTimeFirst + TICK);
 
@@ -207,6 +220,90 @@ assert.ok(got('matchEnd'));
     }
   }
   assert.equal(Object.keys(WEAPONS).length, 21, '18 種 + ナイフ + アルティメット用 2 種');
+}
+
+// ---- 武器とスパイクを落とす (G)、拾う (F / 上を通る) ----
+{
+  const w3 = new World(FOUNDRY, { seed: 21, targets: false, rounds: { winsNeeded: 13 } });
+  const p1 = w3.addPlayer('p1', { team: 'attack' }), p2 = w3.addPlayer('p2', { team: 'attack' }), e1 = w3.addPlayer('e1', { team: 'defense' });
+  startRound(w3);
+  const ev = [];
+  const go = (secs, cmds = {}) => {
+    const out = {};
+    for (const [id, p] of w3.players) out[id] = [{ ...base, yaw: p.yaw, ...cmds[id] }];
+    for (let i = 0; i < Math.max(1, Math.round(secs / TICK)); i++) {
+      w3.step(TICK, out); ev.push(...w3.drainEvents());
+      for (const id in out) { out[id][0].drop = false; out[id][0].slot = null; } // 押した瞬間だけ
+    }
+  };
+  const items = () => w3.ents.filter((e) => e.kind === 'item');
+  const sp = w3.round.spike;
+  p1.credits = 9000;
+  assert.equal(buy(w3, p1, 'ar_tap'), true);
+  w3.round.timer = 0; go(TICK * 2);
+  place(p1, 4, 12); place(p2, 8, 12); place(e1, 4, -8); p1.yaw = 0; p2.yaw = 0;
+  go(0.1);
+
+  // G で持っている武器を前に落とす。落とした物は売れない
+  p1.weapons.primary.ammo = 7;
+  go(TICK, { p1: { drop: true } });
+  assert.equal(items().length, 1); assert.equal(items()[0].w, 'ar_tap');
+  assert.ok(!p1.weapons.primary && p1.slot === 'sidearm', 'サブ武器に持ち替わる');
+  assert.ok(Math.abs(items()[0].z - (12 - 1.3)) < 0.01, '前方に落ちる');
+  go(0.3, { p1: { mz: 1 } });
+  assert.ok(!p1.weapons.primary, '落とした本人は、すぐには拾い直さない');
+  // 味方が上を通ると拾う (メイン武器を持っていないので)。弾は落とした時のまま
+  place(p1, 4, 14); place(p2, 4, 10.7);
+  go(0.1);
+  assert.equal(p2.weapons.primary?.def.id, 'ar_tap', '味方に渡せる');
+  assert.equal(p2.weapons.primary.ammo, 7);
+  assert.equal(items().length, 0);
+
+  // F で持ち替え: 今の武器がその場に残る
+  p1.loadout.primary = 'smg_main'; w3.spawn(p1); place(p1, 8, 12); p1.yaw = 0;
+  go(TICK, { p1: { drop: true } });
+  place(p1, 20, 20); place(p2, 8, 11.5);
+  go(0.2);
+  assert.equal(p2.weapons.primary.def.id, 'ar_tap', '持っている時は、上を通っても拾わない');
+  go(TICK, { p2: { use: true } });
+  assert.equal(p2.weapons.primary.def.id, 'smg_main', 'F で拾う');
+  assert.equal(items().length, 1); assert.equal(items()[0].w, 'ar_tap', '持っていた武器はそこに置かれる');
+
+  // サブ武器も落とせる。ナイフだけになる
+  place(p1, 4, 12); p1.yaw = 0;
+  go(TICK, { p1: { drop: true } });
+  assert.equal(p1.slot, 'melee');
+  go(TICK, { p1: { drop: true } });
+  assert.ok(p1.weapons.melee, 'ナイフは落とせない');
+
+  // スパイク: ナイフを持って G で前に置く。置いた本人はすぐには拾わず、味方が拾える
+  place(p1, sp.x, sp.z); go(TICK * 2);
+  assert.equal(sp.carrier, 'p1');
+  place(p1, 4, 12); p1.yaw = 0; go(TICK * 2);
+  go(TICK, { p1: { drop: true } });
+  assert.equal(sp.state, 'dropped'); assert.ok(Math.abs(sp.z - (12 - 1.3)) < 0.01);
+  go(0.3, { p1: { mz: 1 } });
+  assert.equal(sp.carrier, null, '置いた本人はすぐには拾い直さない');
+  place(p2, 4, 10.7); go(TICK * 2);
+  assert.equal(sp.carrier, 'p2', '味方が拾う');
+  go(1.5); place(p1, 4, 30);
+
+  // やられると、持っていた武器をその場に落とす
+  const before = items().length;
+  place(p2, 4, -8); p2.hp = 1;
+  place(e1, 4, 8); e1.yaw = 0; e1.pitch = 0;
+  go(0.2);
+  go(TICK, { e1: { fire: true, pitch: Math.atan2(1.2 - 1.62, 16) } });
+  assert.equal(p2.alive, false);
+  assert.equal(items().length, before + 1);
+  assert.equal(items().pop().w, 'smg_main');
+  assert.equal(sp.state, 'dropped', 'スパイクも落とす');
+  // 次のラウンド: 落ちている物は片付けられ、サブ武器がなければピストルが支給される
+  p1.alive = false;
+  go(RULES.endTime + 0.3);
+  assert.equal(w3.round.number, 2);
+  assert.equal(items().length, 0);
+  assert.equal(p1.weapons.sidearm?.def.id, 'pistol_basic');
 }
 
 console.log('round: すべて OK');

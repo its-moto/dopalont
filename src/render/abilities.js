@@ -21,7 +21,8 @@ const MATS = {
   warn: glow(0xff3d3d, 0.9),
   strike: glow(0xff8a3c, 0.5, { side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
   firewall: glow(0xff7a1a, 0.9, { side: THREE.DoubleSide }),
-  ice: new THREE.MeshStandardMaterial({ color: 0xbfe9ff, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.82 }),
+  ice: new THREE.MeshStandardMaterial({ color: 0xbfe9ff, roughness: 0.18, metalness: 0.1 }), // 向こうは見えない
+  item: mat(0x2a2f38, { emissive: 0xffd23f, emissiveIntensity: 0.9 }),
   recon: glow(0xffe36b),
   drone: mat(0x2a2f38, { emissive: 0xffe36b, emissiveIntensity: 1.5 }),
   marker: glow(0x7fe3ff, 0.9),
@@ -57,6 +58,7 @@ function build(e) {
     }
     case 'ice': { const m = new THREE.Mesh(UNIT_BOX, MATS.ice); m.scale.set(e.x2 * 2, e.r, e.z2 * 2); m.castShadow = true; return m; }
     case 'recon': { const m = new THREE.Mesh(UNIT_BOX, MATS.recon); m.scale.setScalar(0.18); return m; }
+    case 'item': { const m = new THREE.Mesh(UNIT_BOX, MATS.item); m.scale.set(0.12, 0.14, e.w && e.w.startsWith('pistol') ? 0.35 : 0.8); return m; } // 落ちている武器
     case 'drone': { const m = new THREE.Mesh(UNIT_BOX, MATS.drone); m.scale.set(0.5, 0.18, 0.5); return m; }
     case 'marker': { const m = new THREE.Mesh(RING, MATS.marker); m.rotation.x = Math.PI / 2; m.scale.setScalar(e.r); return m; }
     case 'orb': { const m = new THREE.Mesh(UNIT_SPHERE, MATS.orb); m.scale.setScalar(e.r); return m; }
@@ -111,6 +113,7 @@ export class AbilityViews {
         }
         case 'ice': m.position.set(e.x, e.y + (e.r / 2) * Math.min(1, v.age * 5), e.z); m.scale.y = e.r * Math.min(1, v.age * 5); break;
         case 'marker': m.position.set(e.x, e.y + 0.08, e.z); m.rotation.z = this.time * 2; break;
+        case 'item': m.position.set(e.x, e.y + 0.35 + Math.sin(this.time * 2 + e.x) * 0.05, e.z); m.rotation.y = this.time * 1.2; break;
         case 'orb': m.position.set(e.x, e.y + Math.sin(this.time * 2.4) * 0.12, e.z); break;
         default: m.position.set(e.x, e.y, e.z);
       }

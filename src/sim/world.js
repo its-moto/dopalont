@@ -4,7 +4,8 @@ import { buildMap } from './map.js';
 import { stepMovement } from './movement.js';
 import { stepCombat, createLoadout } from './combat.js';
 import { initRounds, stepRound, onLeave } from './round.js';
-import { initAbilities, stepAbilities, useAbility } from './abilities.js';
+import { initAbilities, stepAbilities, useAbility, armedInput } from './abilities.js';
+import { dropHeld, stepItems } from './items.js';
 
 export const TICK = 1 / 64;
 export const RESPAWN_TIME = 3;       // respawn オプション (ラウンドなしの復活あり) 用
@@ -13,7 +14,7 @@ const HIST_STRIDE = 5;               // time, x, y, z, crouch
 const RANGE_LOADOUT = { primary: 'ar_tap', sidearm: 'pistol_basic', melee: 'knife' };
 const ROUND_LOADOUT = { sidearm: 'pistol_basic', melee: 'knife' };
 
-const NEUTRAL = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, slot: null, ab: null, yaw: 0, pitch: 0, seq: 0 };
+const NEUTRAL = { mx: 0, mz: 0, jump: false, crouch: false, walk: false, fire: false, alt: false, reload: false, use: false, drop: false, slot: null, ab: null, yaw: 0, pitch: 0, seq: 0 };
 
 /** ゲームの状態全体。描画・音・DOM に依存しない (Node でも動く) */
 export class World {
@@ -94,7 +95,7 @@ export class World {
     p.pitch = 0; p.crouch = 0;
     p.hp = 100; p.alive = true; p.acting = null;
     p.weapons = createLoadout(p.loadout);
-    p.slot = p.loadout.primary ? 'primary' : 'sidearm';
+    p.slot = p.weapons.primary ? 'primary' : p.weapons.sidearm ? 'sidearm' : 'melee';
     p.equipUntil = 0; p.sprayIndex = 0;
     p.recoil.yaw = p.recoil.pitch = 0;
     Object.assign(p.lastCmd, NEUTRAL);
@@ -161,27 +162,32 @@ export class World {
       }
       const list = cmds[p.id];
       const last = p.lastCmd;
-      last.reload = false; last.slot = null; last.ab = null;
+      last.reload = false; last.slot = null; last.ab = null; last.drop = false;
       if (list && list.length) {
-        let reload = false, slot = null, ab = null;
+        let reload = false, slot = null, ab = null, drop = false;
         for (let i = 0; i < list.length; i++) {
           const c = list[i];
           stepMovement(this, p, c, dt);
           if (c.reload) reload = true;
           if (c.slot) slot = c.slot;
           if (c.ab) ab = c.ab;
+          if (c.drop) drop = true;
           if (c.seq) p.ack = c.seq;
         }
         Object.assign(last, list[list.length - 1]);
-        last.reload = reload; last.slot = slot; last.ab = ab;
+        last.reload = reload; last.slot = slot; last.ab = ab; last.drop = drop;
       }
-      if (last.ab && this.abilAuth) useAbility(this, p, last.ab);
+      if (this.abilAuth) {
+        if (last.ab) useAbility(this, p, last.ab);
+        if (p.armed) armedInput(this, p, last); // 構え中のクリックで発動 / 取り消し
+        if (last.drop) dropHeld(this, p);
+      }
       stepCombat(this, p, last, dt);
 
       const i = (p.histN++ % HIST) * HIST_STRIDE, h = p.hist;
       h[i] = this.time; h[i + 1] = p.pos.x; h[i + 2] = p.pos.y; h[i + 3] = p.pos.z; h[i + 4] = p.crouch;
     }
-    if (this.abilAuth) stepAbilities(this, dt);
+    if (this.abilAuth) { stepItems(this); stepAbilities(this, dt); }
     if (this.roundAuth) stepRound(this, dt);
 
     for (const t of this.targets) {

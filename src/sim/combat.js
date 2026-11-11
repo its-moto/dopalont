@@ -292,12 +292,15 @@ export function stepCombat(world, p, inp, dt) {
   if (since > rec.resetTime) p.sprayIndex = 0;
 
   // 設置・解除の最中は撃てない
-  const ready = t >= p.equipUntil && !w.reloadEnd && !p.acting;
+  // アビリティを構えている間は撃てない。発動や取り消しに使ったクリックでも、ボタンを離すまで撃たない
+  if (p.armed && (inp.fire || inp.alt)) p.holdFire = true;
+  else if (p.holdFire && !inp.fire && !inp.alt) p.holdFire = false;
+  const ready = t >= p.equipUntil && !w.reloadEnd && !p.acting && !p.armed && !p.holdFire;
   p.ads = !!(def.ads && inp.alt && ready);
   p.moveMul = def.moveSpeedMul * (p.ads ? def.ads.moveMul : 1);
 
   const fireEdge = inp.fire && !p.prevFire, altEdge = inp.alt && !p.prevAlt;
-  if (fireEdge) p.fireBuffer = t + FIRE_BUFFER;
+  if (fireEdge && !p.holdFire && !p.armed) p.fireBuffer = t + FIRE_BUFFER; // アビリティ用のクリックは先行入力に数えない
   if (inp.reload && ready) startReload(world, p, w);
 
   if (ready && !w.reloadEnd) {

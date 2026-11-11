@@ -2,6 +2,7 @@ import { RULES } from '../data/rules.js';
 import { WEAPONS } from '../data/weapons.js';
 import { createLoadout } from './combat.js';
 import { roundAbilities, buyAbility, sellAbility, addUlt } from './abilities.js';
+import { dropOnDeath } from './items.js';
 
 // ラウンドの進行・スパイク・経済・購入 (DESIGN.md §4)。ホストの sim だけが動かす
 //
@@ -32,8 +33,13 @@ const aliveCount = (list) => list.reduce((n, p) => n + (p.alive ? 1 : 0), 0);
 function addCredits(p, n) { p.credits = Math.min(RULES.maxCredits, p.credits + n); }
 
 export function emitInv(world, p) {
-  world.emit('inv', { playerId: p.id, credits: p.credits, armor: p.armor, primary: p.loadout.primary || null, sidearm: p.loadout.sidearm, ult: p.loadout.ult || null });
+  const am = (slot) => (p.weapons[slot] ? [p.weapons[slot].ammo, p.weapons[slot].reserve] : null);
+  world.emit('inv', { playerId: p.id, credits: p.credits, armor: p.armor, primary: p.loadout.primary || null, sidearm: p.loadout.sidearm || null, ult: p.loadout.ult || null,
+    ammo: { primary: am('primary'), sidearm: am('sidearm') } }); // ammo: 拾った武器の残弾を参加側に伝える
 }
+
+/** 今持てる中で一番良い武器のスロット */
+export const bestSlot = (p) => (p.weapons.primary ? 'primary' : p.weapons.sidearm ? 'sidearm' : 'melee');
 
 /** 武器スロットの中身を入れ替える (id が null なら外す) */
 export function setSlot(p, slot, id) {
@@ -46,7 +52,7 @@ export function setSlot(p, slot, id) {
     delete p.loadout[slot];
     delete p.weapons[slot];
   }
-  if (!p.weapons[p.slot]) p.slot = p.weapons.primary ? 'primary' : 'sidearm';
+  if (!p.weapons[p.slot]) p.slot = bestSlot(p);
   p.sprayIndex = 0;
   p.prevFire = true; // 持ち替えた瞬間に、押しっぱなしのボタンで撃ってしまわないように
   p.recoil.yaw = p.recoil.pitch = 0;
@@ -57,7 +63,11 @@ export function applyInv(p, e) {
   p.credits = e.credits;
   p.armor = e.armor;
   for (const slot of ['primary', 'sidearm', 'ult']) {
-    if ((p.loadout[slot] || null) !== (e[slot] || null)) setSlot(p, slot, e[slot] || null);
+    if ((p.loadout[slot] || null) !== (e[slot] || null)) {
+      setSlot(p, slot, e[slot] || null);
+      const am = e.ammo && e.ammo[slot];
+      if (am && p.weapons[slot]) { p.weapons[slot].ammo = am[0]; p.weapons[slot].reserve = am[1]; }
+    }
   }
 }
 
@@ -96,6 +106,7 @@ export function startRound(world) {
     if (!pts[p.team]) continue;
     // やられた人は武器とアーマーを失う。生き残った人は持ち越す
     if (r.freshAll || !p.alive || p.fresh) { p.loadout = startLoadout(); p.armor = 0; }
+    if (!p.loadout.sidearm) p.loadout.sidearm = 'pistol_basic'; // サブ武器を手放していたら、最初のピストルが支給される
     if (r.freshAll) p.credits = r.overtime ? RULES.overtimeCredits : RULES.startCredits;
     p.fresh = false; p.bought = {}; p.acting = null;
     world.spawn(p, pts[p.team][next[p.team]++ % pts[p.team].length]);
@@ -103,10 +114,11 @@ export function startRound(world) {
   }
   r.freshAll = false;
 
-  const attackers = members(world, 'attack');
-  const carrier = attackers.length ? attackers[Math.floor(world.rng() * attackers.length)] : null;
-  Object.assign(r.spike, { state: carrier ? 'carried' : 'none', carrier: carrier ? carrier.id : null, plant: 0, defuse: 0, user: null, site: null });
-  world.emit('roundStart', { n: r.number, teams, carrier: r.spike.carrier });
+  // スパイクは攻撃スポーンの真ん中に落ちている。攻撃側の誰かが上を通って拾う
+  const sp = world.map.spawns.attack;
+  const cx = sp.reduce((a, q) => a + q.x, 0) / sp.length, cz = sp.reduce((a, q) => a + q.z, 0) / sp.length;
+  Object.assign(r.spike, { state: 'dropped', carrier: null, x: cx, y: 0, z: cz, plant: 0, defuse: 0, user: null, site: null, noPick: null, noPickUntil: 0 });
+  world.emit('roundStart', { n: r.number, teams, carrier: null });
 }
 
 function endRound(world, side, reason) {
@@ -163,10 +175,31 @@ function siteAt(world, p) {
 }
 
 function dropSpike(world, p) {
+  dropSpikeAt(world, p, p.pos.x, p.pos.z);
+  world.round.spike.noPick = null;
+}
+
+/** スパイクを (x, z) に置く。置いた本人はしばらく拾い直せない (G キーで味方に渡す時) */
+export function dropSpikeAt(world, p, x, z) {
   const s = world.round.spike;
-  s.state = 'dropped'; s.carrier = null; s.plant = 0;
-  s.x = p.pos.x; s.y = p.pos.y; s.z = p.pos.z;
+  s.state = 'dropped'; s.carrier = null; s.plant = 0; s.user = null;
+  s.x = x; s.y = p.pos.y; s.z = z;
+  s.noPick = p.id; s.noPickUntil = world.time + 1.5;
+  p.acting = null;
   world.emit('spikeDrop', { playerId: p.id });
+}
+
+function pickupSpike(world) {
+  const s = world.round.spike;
+  if (s.state !== 'dropped') return;
+  for (const p of world.players.values()) {
+    if (!p.alive || p.team !== 'attack') continue;
+    if (s.noPick === p.id && world.time < s.noPickUntil) continue;
+    if (Math.hypot(p.pos.x - s.x, p.pos.z - s.z) > RULES.pickupRange || Math.abs(p.pos.y - s.y) > 1.5) continue;
+    s.state = 'carried'; s.carrier = p.id;
+    world.emit('spikePickup', { playerId: p.id });
+    return;
+  }
 }
 
 /** キルが起きた時に combat から呼ばれる。killer が null ならスパイクの爆発 */
@@ -176,6 +209,7 @@ export function onKill(world, killer, victim) {
   if (killer && killer.team !== victim.team) { addCredits(killer, RULES.killCredits); emitInv(world, killer); }
   victim.acting = null;
   if (r.spike.state === 'carried' && r.spike.carrier === victim.id) dropSpike(world, victim);
+  dropOnDeath(world, victim);
 }
 
 /** プレイヤーが抜けた時 */
@@ -188,6 +222,7 @@ export function stepRound(world, dt) {
   const r = world.round, s = r.spike;
   if (r.phase === 'over') return;
   r.timer -= dt;
+  if (r.phase !== 'end') pickupSpike(world); // 購入フェーズ中でも拾える
 
   if (r.phase === 'buy') {
     if (r.timer <= 0) { r.phase = 'live'; r.timer = RULES.roundTime; world.emit('phase', { phase: 'live' }); }
@@ -199,16 +234,6 @@ export function stepRound(world, dt) {
   }
 
   const attackers = members(world, 'attack'), defenders = members(world, 'defense');
-
-  // ---- スパイクを拾う ----
-  if (s.state === 'dropped') {
-    for (const p of attackers) {
-      if (!p.alive || Math.hypot(p.pos.x - s.x, p.pos.z - s.z) > RULES.pickupRange || Math.abs(p.pos.y - s.y) > 1.5) continue;
-      s.state = 'carried'; s.carrier = p.id;
-      world.emit('spikePickup', { playerId: p.id });
-      break;
-    }
-  }
 
   // ---- 設置 (サイト内で F を押し続ける) ----
   if (r.phase === 'live' && s.state === 'carried') {

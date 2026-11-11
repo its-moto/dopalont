@@ -16,6 +16,7 @@ import { Hud } from './ui/hud.js';
 import { Dopamine } from './ui/dopamine.js';
 import { Minimap } from './ui/minimap.js';
 import { AbilityViews } from './render/abilities.js';
+import { AGENTS } from './data/agents.js';
 
 const STEP_DIST = 2.4, STEP_SPEED = 4.4, HEAR_DIST = 45;
 const EYE_STAND = 1.62, EYE_CROUCH = 1.05;
@@ -136,7 +137,6 @@ export class Game {
   start() {
     this.running = true;
     this.setQuality(this.settings.quality);
-    this.audio.ambient(true);
     this.hud.show(true);
     this.last = performance.now();
     const loop = (now) => {
@@ -150,7 +150,6 @@ export class Game {
   dispose() {
     this.running = false;
     this.audio.occluded = null;
-    this.audio.ambient(false);
     this.ticker?.terminate();
     this.closeBuy(false, true);
     this.hud.show(false);
@@ -275,10 +274,8 @@ export class Game {
 
     // ---- HUD ----
     this.hud.update(dt, p, world, this.stats);
-    // 体力が少ない時: 画面の縁が赤く脈打ち、鼓動が聞こえる
-    const low = alive && p.hp <= 30;
-    this.hud.lowHp(low);
-    if (low) { this.heartT -= dt; if (this.heartT <= 0) { this.heartT = 0.95; this.sfx.heartbeat(); } } else this.heartT = 0;
+    // 体力が少ない時: 画面の縁が赤く脈打つ
+    this.hud.lowHp(alive && p.hp <= 30);
     // 屋根の下では反響を強める
     this.roofT -= dt;
     if (this.roofT <= 0) {
@@ -288,6 +285,18 @@ export class Game {
     }
     this.hud.scope(scoped);
     this.hud.abilities(alive ? p : null, world.freeAbilities);
+    // 画面中央下の案内: アビリティを構えている時と、拾える武器が近くにある時
+    let hint = '';
+    if (alive && p.armed) {
+      const d = AGENTS[p.agent].abilities[p.armed], k = p.armed.toUpperCase();
+      hint = d.curve ? `${d.name}: 左クリックで左へ / 右クリックで右へ　(${k} で取り消し)` : `${d.name}: 左クリックで発動　(右クリックか ${k} で取り消し)`;
+    } else if (alive) {
+      for (const e of session.ents) {
+        if (e.kind === 'item' && Math.hypot(e.x - p.pos.x, e.z - p.pos.z) < 1.7 && Math.abs(e.y - p.pos.y) < 1.5) { hint = `F で拾う: ${WEAPONS[e.w]?.name || ''}`; break; }
+      }
+    }
+    this.hint = hint;
+    if (!r) this.hud.status(hint);
     // 閃光: 真っ白になり、終わりぎわに戻ってくる
     if (this.flashT > 0) this.flashT -= dt;
     this.hud.flash(alive && this.flashT > 0 ? Math.min(1, (this.flashT / this.flashDur) * 2.2) : 0);
@@ -302,7 +311,7 @@ export class Game {
 
     this.renderer.clear();
     this.renderer.render(this.scene, cam);
-    if (alive && !scoped) this.vm.render(this.renderer);
+    if (alive && !scoped && !p.armed) this.vm.render(this.renderer); // アビリティを構えている間は武器を下ろす
   }
 
   updateRound(dt, r, p, alive, remotes) {
@@ -362,11 +371,12 @@ export class Game {
 
     // 何ができるかの案内
     let tip = '';
-    if (alive && r.phase === 'buy') tip = 'B で購入メニュー';
-    else if (alive && s.carrier === myId && r.phase === 'live') tip = this.inSite(p) ? 'F 長押しでスパイク設置' : 'スパイクを持っています (サイトで設置)';
+    if (alive && r.phase === 'buy') tip = p.team === 'attack' && s.state === 'dropped' ? 'B で購入メニュー　／　スパイクは上を通ると拾える' : 'B で購入メニュー';
+    else if (alive && s.carrier === myId && r.phase === 'live') tip = this.inSite(p) ? 'F 長押しでスパイク設置' : 'スパイクを持っています (サイトで設置。渡すならナイフを持って G)';
+    else if (alive && p.team === 'attack' && s.state === 'dropped' && r.phase !== 'end') tip = 'スパイクが落ちています (上を通ると拾う)';
     else if (alive && p.team === 'defense' && s.state === 'planted' && r.phase === 'planted'
       && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) <= RULES.defuseRange) tip = 'F 長押しでスパイク解除';
-    hud.status(planting || defusing ? '' : tip);
+    hud.status(planting || defusing ? '' : this.hint || tip);
 
     for (const side of ['attack', 'defense']) this.barriers[side].visible = r.phase === 'buy';
   }
@@ -523,6 +533,8 @@ export class Game {
         break;
       case 'ultReady': if (mine) { hud.banner('', 'アルティメット準備完了 (X)', 'go', 1.8); sfx.ultReady(); } break;
 
+      case 'drop': case 'pickup': if (mine) sfx.equip(); break;
+      case 'armed': if (mine) sfx.uiClick(); break;
       case 'join': hud.notice(`${e.player.name} が参加しました`); break;
       case 'left': hud.notice('プレイヤーが退出しました'); this.steps.delete(e.playerId); break;
       case 'targetRespawn': this.targets.onRespawn(e.targetId); break;

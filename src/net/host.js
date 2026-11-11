@@ -18,7 +18,7 @@ function cleanCmd(c) {
   return {
     seq: num(c.seq) | 0,
     mx: clamp(num(c.mx), -1, 1), mz: clamp(num(c.mz), -1, 1),
-    jump: !!c.jump, crouch: !!c.crouch, walk: !!c.walk, fire: !!c.fire, alt: !!c.alt, reload: !!c.reload, use: !!c.use,
+    jump: !!c.jump, crouch: !!c.crouch, walk: !!c.walk, fire: !!c.fire, alt: !!c.alt, reload: !!c.reload, use: !!c.use, drop: !!c.drop,
     slot: c.slot === 'primary' || c.slot === 'sidearm' || c.slot === 'melee' ? c.slot : null,
     ab: c.ab === 'c' || c.ab === 'q' || c.ab === 'e' || c.ab === 'x' ? c.ab : null,
     yaw: num(c.yaw), pitch: clamp(num(c.pitch), -PITCH_LIMIT, PITCH_LIMIT),

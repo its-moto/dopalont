@@ -109,7 +109,11 @@ assert.equal(client.round.phase, 'live');
   assert.equal(me.abil.e, 0, '残り回数が届く');
   hp.abil.c = 1;
   ci.state.ab = 'c'; run(TICK); ci.state.ab = null;
-  run(0.3);
+  run(0.15);
+  assert.equal(me.armed, 'c', '構えた状態が参加側に届く');
+  ci.state.fire = true; run(TICK * 2); ci.state.fire = false; // 左クリックで投げる
+  run(0.2);
+  assert.equal(me.armed, null);
   assert.ok(client.ents.some((e) => e.kind === 'proj'), '飛んでいる投げ物が見える');
   run(1.5);
   assert.ok(client.ents.some((e) => e.kind === 'smoke'), '煙幕が参加側にも出る');

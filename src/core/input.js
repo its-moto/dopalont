@@ -66,6 +66,7 @@ export class Input {
       alt: (this.buttons & 4) !== 0,
       reload: this.edges.has('KeyR'),
       use: k.has('KeyF'),
+      drop: this.edges.has('KeyG'),
       slot,
       ab,
       yaw: this.yaw,

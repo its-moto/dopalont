@@ -26,12 +26,13 @@ function resetStatus(p) {
   p.slowMul = 1; p.noJump = false; p.rateMul = 1;
   p.hot = 0; p.hotRate = 0;
   p.recall = null; p.revealUntil = 0; p.revealTeam = null;
+  p.armed = null; // 構えているアビリティのキー
 }
 
 const defsOf = (p) => AGENTS[p.agent].abilities;
 
 export function emitAbil(world, p) {
-  world.emit('abil', { playerId: p.id, c: p.abil.c, q: p.abil.q, e: p.abil.e, cd: Math.max(0, Math.round(p.abilCd * 10) / 10), ult: p.ult });
+  world.emit('abil', { playerId: p.id, c: p.abil.c, q: p.abil.q, e: p.abil.e, cd: Math.max(0, Math.round(p.abilCd * 10) / 10), ult: p.ult, armed: p.armed });
 }
 
 export function addUlt(world, p, n = 1) {
@@ -42,7 +43,7 @@ export function addUlt(world, p, n = 1) {
   if (p.ult >= cost) world.emit('ultReady', { playerId: p.id });
 }
 
-function addEnt(world, o) {
+export function addEnt(world, o) {
   const e = { id: 'e' + ++world.entSeq, r: 0, x2: 0, z2: 0, team: null, owner: null, ttl: 1, ...o };
   world.ents.push(e);
   return e;
@@ -206,14 +207,15 @@ function reveal(world, e, r, secs) {
 }
 
 // ---- 発動 ----
-function cast(world, p, key, def) {
+function cast(world, p, key, def, variant) {
   const o = eyeOf(p), d = fwd3(p), base = { owner: p.id, team: p.team };
   switch (def.kind) {
     case 'throw': {
       const s = def.proj.speed;
       addEnt(world, { ...base, kind: 'proj', x: o[0] + d[0] * 0.5, y: o[1] + d[1] * 0.5 - 0.1, z: o[2] + d[2] * 0.5,
         vx: d[0] * s, vy: d[1] * s + (def.proj.gravity > 10 ? 2.5 : 0), vz: d[2] * s,
-        r: 0.12, ttl: def.proj.fuse, bounces: def.proj.bounces ?? 3, def });
+        r: 0.12, ttl: def.proj.fuse, bounces: def.proj.bounces ?? 3, def,
+        turn: def.curve ? (variant === 'R' ? -def.curve : def.curve) : 0 }); // 左クリックなら左へ、右クリックなら右へ曲がる
       return true;
     }
     case 'updraft': p.vel.y = def.v; p.onGround = false; return true;
@@ -303,24 +305,55 @@ function cast(world, p, key, def) {
   return false;
 }
 
-/** アビリティを使う。使えたら true */
-export function useAbility(world, p, key) {
-  const def = defsOf(p)[key];
+// 狙いをつけるアビリティは二段階: キーで構える → 左クリックで発動。もう一度キーを押すか右クリックで取り消し
+// (curve つきは右クリックも発動で、曲がる向きが変わる。取り消しはキーか武器の持ち替え)
+const ARM_KINDS = new Set(['throw', 'aim', 'firewall', 'icewall', 'drone']);
+
+function canUse(world, p, key, def) {
   if (!def || !p.alive || p.acting) return false;
   if (world.round && world.round.phase === 'buy') return false;
   const free = world.freeAbilities; // 射撃場: 回数もポイントも減らない
-  if (def.cooldown || free) { if (p.abilCd > 0 && key === 'e') return false; }
-  if (!free) {
-    if (key === 'x') { if (p.ult < def.ult) return false; }
-    else if (!def.cooldown && p.abil[key] <= 0) return false;
+  if ((def.cooldown || free) && p.abilCd > 0 && key === 'e') return false;
+  if (free) return true;
+  if (key === 'x') return p.ult >= def.ult;
+  return !!def.cooldown || p.abil[key] > 0;
+}
+
+/**
+ * アビリティのキーが押された。すぐ発動するものは発動し、狙いをつけるものは構える (もう一度押すと取り消し)
+ * variant を渡すと構えを飛ばして発動する ('L' / 'R' = 左右のクリック)
+ */
+export function useAbility(world, p, key, variant = null) {
+  const def = defsOf(p)[key];
+  if (!variant && p.armed === key) { p.armed = null; emitAbil(world, p); return false; }
+  if (!canUse(world, p, key, def)) return false;
+  if (!variant && ARM_KINDS.has(def.kind)) {
+    p.armed = key;
+    emitAbil(world, p);
+    world.emit('armed', { playerId: p.id, key });
+    return false;
   }
-  if (!cast(world, p, key, def)) return false;
+  p.armed = null;
+  const free = world.freeAbilities;
+  if (!cast(world, p, key, def, variant)) { emitAbil(world, p); return false; }
   if (key === 'x') { if (!free) p.ult = 0; }
   else if (def.cooldown) p.abilCd = free ? 3 : def.cooldown;
   else if (!free) p.abil[key]--;
   emitAbil(world, p);
   world.emit('ability', { playerId: p.id, key, kind: def.kind, x: p.pos.x, y: p.pos.y + 1.2, z: p.pos.z });
   return true;
+}
+
+/** 構えている間の入力: 左クリックで発動、右クリックで取り消し (curve つきは右へ曲げて発動)、武器の持ち替えで取り消し */
+export function armedInput(world, p, inp) {
+  const def = defsOf(p)[p.armed];
+  if (inp.slot) { p.armed = null; emitAbil(world, p); return; }
+  if (inp.fire || inp.alt) p.holdFire = true; // このクリックで武器まで撃ってしまわないように (combat が見る)
+  if (inp.fire && !p.prevFire) useAbility(world, p, p.armed, 'L');
+  else if (inp.alt && !p.prevAlt) {
+    if (def.curve) useAbility(world, p, p.armed, 'R');
+    else { p.armed = null; emitAbil(world, p); }
+  }
 }
 
 // ---- 毎 tick ----
@@ -360,6 +393,10 @@ function stepFirewall(world, e, dt) {
 function stepProj(world, e, dt) {
   const pr = e.def.proj;
   e.vy -= pr.gravity * dt;
+  if (e.turn) { // 飛びながら横に曲がる
+    const a = e.turn * dt, c = Math.cos(a), sn = Math.sin(a), vx = e.vx;
+    e.vx = vx * c + e.vz * sn; e.vz = e.vz * c - vx * sn;
+  }
   const len = Math.hypot(e.vx, e.vy, e.vz) * dt;
   if (len > 1e-6) {
     const d = [e.vx * dt / len, e.vy * dt / len, e.vz * dt / len];
@@ -438,6 +475,7 @@ export function stepAbilities(world, dt) {
           }
         }
         break;
+      case 'item': break;
       case 'ice': {
         const b = world.boxes.find((bx) => bx.entId === e.id);
         if (!b || b.hp <= 0) { done = true; world.emit('effect', { kind: 'iceBreak', x: e.x, y: e.y + 1, z: e.z }); }

@@ -28,8 +28,9 @@ export const AGENTS = {
     id: 'ember', name: 'エンバー', role: 'デュエリスト', color: 0xff8a3c, tagline: '炎で焼き、炎で治す',
     abilities: {
       c: { name: 'フレアウォール', desc: '前方に炎の壁。敵は焼け、自分は回復', price: 200, max: 1, kind: 'firewall', length: 18, dur: 8, dps: 30, heal: 12 },
-      q: { name: 'カーブフラッシュ', desc: 'すぐ炸裂する閃光弾。見た人は目がくらむ', price: 250, max: 2, kind: 'throw',
-        proj: { speed: 20, gravity: 4, fuse: 0.55 }, effect: { flash: { dur: 1.1, range: 40 } } },
+      q: { name: 'カーブフラッシュ', desc: '曲がって飛ぶ閃光弾。左クリックで左へ、右クリックで右へ。見た人は目がくらむ', price: 250, max: 2, kind: 'throw',
+        curve: 2.4, // 曲がる速さ (ラジアン/秒)。0.7 秒で約 95 度
+        proj: { speed: 20, gravity: 4, fuse: 0.7 }, effect: { flash: { dur: 1.1, range: 40 } } },
       e: { name: 'ヒートドロップ', desc: '火炎瓶。敵は焼け、自分は回復。2 キルで回復', free: 1, killsRecharge: 2, kind: 'throw',
         proj: { speed: 16, gravity: 18, fuse: 2, onStop: true }, effect: fire(3.6, 4, 60, 12.5) },
       x: { name: 'リワインド', desc: '10 秒以内にやられても、使った場所に全快で戻る', ult: 6, kind: 'recall', dur: 10 },

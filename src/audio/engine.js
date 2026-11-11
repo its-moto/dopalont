@@ -103,31 +103,6 @@ export class AudioEngine {
     if (this.buses && this.buses[name]) this.buses[name].gain.setTargetAtTime(this.busBase[name] * scale, this.ctx.currentTime, 0.03);
   }
 
-  /** 環境音 (風と遠くのうなり)。試合中ずっと小さく流す */
-  ambient(on) {
-    if (!this.ctx) return;
-    if (!on) { this.amb?.stop(); this.amb = null; return; }
-    if (this.amb) return;
-    const ctx = this.ctx, nodes = [];
-    const wind = ctx.createBufferSource();
-    wind.buffer = this.noiseBuf; wind.loop = true;
-    const lp = ctx.createBiquadFilter(); lp.type = 'bandpass'; lp.frequency.value = 420; lp.Q.value = 0.4;
-    const g = ctx.createGain(); g.gain.value = 0.16;
-    const lfo = ctx.createOscillator(), lg = ctx.createGain(); // 風の強弱
-    lfo.frequency.value = 0.13; lg.gain.value = 0.09;
-    lfo.connect(lg).connect(g.gain);
-    const lfo2 = ctx.createOscillator(), lg2 = ctx.createGain(); // 音色のゆらぎ
-    lfo2.frequency.value = 0.07; lg2.gain.value = 160;
-    lfo2.connect(lg2).connect(lp.frequency);
-    wind.connect(lp).connect(g).connect(this.buses.amb);
-    const hum = ctx.createOscillator(), hg = ctx.createGain(); // 工場の低いうなり
-    hum.type = 'sawtooth'; hum.frequency.value = 55; hg.gain.value = 0.012;
-    const hl = ctx.createBiquadFilter(); hl.type = 'lowpass'; hl.frequency.value = 180;
-    hum.connect(hl).connect(hg).connect(this.buses.amb);
-    for (const n of [wind, lfo, lfo2, hum]) { n.start(); nodes.push(n); }
-    this.amb = { stop: () => { for (const n of nodes) { try { n.stop(); } catch { /* 既に止まっている */ } } g.disconnect(); hg.disconnect(); } };
-  }
-
   /** 屋根のある場所では銃声の反響を強める */
   setIndoor(indoor) {
     if (!this.ctx || this.indoor === indoor) return;

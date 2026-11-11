@@ -184,7 +184,7 @@ export class ClientSession {
           if (this.me && ev.teams[this.myId]) this.me.team = ev.teams[this.myId];
         } else if (ev.type === 'abil' && ev.playerId === this.myId && this.me) {
           const me = this.me;
-          me.abil.c = ev.c; me.abil.q = ev.q; me.abil.e = ev.e; me.abilCd = ev.cd; me.ult = ev.ult;
+          me.abil.c = ev.c; me.abil.q = ev.q; me.abil.e = ev.e; me.abilCd = ev.cd; me.ult = ev.ult; me.armed = ev.armed || null;
         }
         if (ev.type === 'kill') {
           const k = this.roster.get(ev.playerId), v = this.roster.get(ev.victimId);
